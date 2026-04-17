@@ -1,0 +1,21 @@
+# Environment variables
+.env
+config.yaml
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+
+# SQLite database files
+*.db
+*.sqlite
+*.sqlite3
+
+# Data directory (if you want to keep db out of repo)
+data/
+
+# Docker
+data/
+# .env already covered
+.gitnexus

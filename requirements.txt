@@ -1,0 +1,20 @@
+python-telegram-bot
+httpx[socks]
+socksio
+ormar
+sqlalchemy
+databases[aiosqlite]
+aiosqlite
+aiohttp
+
+# Redis для кэширования (опционально):
+# redis>=5.0.0
+# aioredis>=2.0.0
+
+# Для MySQL (раскомментировать если нужно):
+# aiomysql==0.2.0
+# databases[aiomysql]==0.7.0
+
+# Для PostgreSQL (раскомментировать если нужно):
+# asyncpg==0.29.0
+# databases[asyncpg]==0.7.0
