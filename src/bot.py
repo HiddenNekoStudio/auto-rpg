@@ -41,6 +41,17 @@ def ctime(seconds: int) -> str:
     return ", ".join(result) if result else "0 сек."
 
 
+def format_short(n: int) -> str:
+    """Сокращает число: 1500 → 1.5K, 1500000 → 1.5M"""
+    if n >= 1_000_000_000:
+        return f"{n / 1_000_000_000:.1f}G"
+    elif n >= 1_000_000:
+        return f"{n / 1_000_000:.1f}M"
+    elif n >= 1_000:
+        return f"{n / 1_000:.1f}K"
+    return str(n)
+
+
 def item_string(item: dict) -> str:
     """Форматирует предмет в строку с эмодзи редкости."""
     emoji = cfg.RARITY_EMOJI.get(item.get("rank", "Common"), "⚪")
@@ -63,7 +74,7 @@ def readfile(e: str) -> list[str]:
 
 
 async def send_to_players(bot: Bot, text: str, player_uids: list = None,
-                          parse_mode: str = "Markdown") -> None:
+                          parse_mode: str = "Markdown", reply_markup=None) -> None:
     """
     Отправляет сообщение напрямую в личку игрокам.
     Если player_uids не указан — шлёт всем онлайн-игрокам.
@@ -81,7 +92,7 @@ async def send_to_players(bot: Bot, text: str, player_uids: list = None,
     for uid in uids:
         for attempt in range(3):
             try:
-                await bot.send_message(chat_id=uid, text=text, parse_mode=parse_mode)
+                await bot.send_message(chat_id=uid, text=text, parse_mode=parse_mode, reply_markup=reply_markup)
                 break
             except RetryAfter as e:
                 await asyncio.sleep(e.retry_after + 1)
@@ -116,6 +127,32 @@ def init_db():
         "ALTER TABLE users ADD COLUMN state VARCHAR(20) NOT NULL DEFAULT 'peaceful'",
         "ALTER TABLE users ADD COLUMN state_context TEXT NOT NULL DEFAULT '{}'",
     ]
+    
+    # Миграции для player_quests
+    quest_migrations = [
+        # Legacy columns from old system - add if not exists
+        "ALTER TABLE player_quests ADD COLUMN quest_id INTEGER DEFAULT 0",
+        "ALTER TABLE player_quests ADD COLUMN quest_id_str VARCHAR(50) DEFAULT ''",
+        "ALTER TABLE player_quests ADD COLUMN location_name VARCHAR(100) DEFAULT ''",
+        "ALTER TABLE player_quests ADD COLUMN location_x INTEGER DEFAULT 0",
+        "ALTER TABLE player_quests ADD COLUMN location_y INTEGER DEFAULT 0",
+        "ALTER TABLE player_quests ADD COLUMN target_location_id VARCHAR(50) DEFAULT ''",
+        "ALTER TABLE player_quests ADD COLUMN location_locked INTEGER DEFAULT 0",
+        "ALTER TABLE player_quests ADD COLUMN quest_id_str VARCHAR(50) DEFAULT ''",
+        # NEW QUEST SYSTEM COLUMNS
+        "ALTER TABLE player_quests ADD COLUMN quest_key VARCHAR(36) DEFAULT ''",
+        "ALTER TABLE player_quests ADD COLUMN category VARCHAR(30) DEFAULT ''",
+        "ALTER TABLE player_quests ADD COLUMN target_type VARCHAR(20) DEFAULT ''",
+        "ALTER TABLE player_quests ADD COLUMN target_id VARCHAR(50) DEFAULT ''",
+        "ALTER TABLE player_quests ADD COLUMN reward_item VARCHAR(100) DEFAULT ''",
+        "ALTER TABLE player_quests ADD COLUMN expires_at INTEGER DEFAULT 0",
+        "ALTER TABLE player_quests ADD COLUMN accepted_at INTEGER DEFAULT 0",
+        "ALTER TABLE player_quests ADD COLUMN cooldown_until INTEGER DEFAULT 0",
+        "ALTER TABLE player_quests ADD COLUMN last_progress_at INTEGER DEFAULT 0",
+        # FIX: pending → offered
+        "UPDATE player_quests SET status='offered' WHERE status='pending'",
+    ]
+    
     with engine.connect() as conn:
         for sql in migrations:
             try:
@@ -125,35 +162,58 @@ def init_db():
                 logging.info("Миграция применена: добавлена колонка %s", col)
             except Exception:
                 pass  # Колонка уже существует — пропускаем
+        
+        # Применяем миграции для player_quests
+        table_exists = conn.execute(sqlalchemy.text(
+            "SELECT name FROM sqlite_master WHERE type='table' AND name='player_quests'"
+        )).fetchone()
+        
+        if table_exists:
+            for sql in quest_migrations:
+                try:
+                    conn.execute(sqlalchemy.text(sql))
+                    conn.commit()
+                    col = sql.split("ADD COLUMN")[1].strip().split()[0]
+                    logging.info("Миграция применена: добавлена колонка %s", col)
+                except Exception:
+                    pass
 
     logging.info("База данных инициализирована")
 
 
 async def post_init(app: Application) -> None:
     """Вызывается после старта бота — подключаем БД, задаём команды и запускаем циклы."""
-    await database.connect()
-    
-    # Устанавливаем состояние БД для healthcheck
     from health import set_db_connected
-    set_db_connected(True)
-
-    # Сбрасываем застрявших игроков (FSM protection)
+    from game.bosses import init_bosses
     from game.states import StateManager
-    stuck_count = await StateManager.resolve_stuck_players()
+    
+    await database.connect()
+    set_db_connected(True)
+    
+    try:
+        await init_bosses()
+    except Exception as e:
+        logger.warning(f"Boss init failed (non-fatal): {e}")
+    
+    try:
+        stuck_count = await StateManager.resolve_stuck_players()
+        if stuck_count > 0:
+            logger.warning(f"Resolved {stuck_count} stuck players from previous session")
+    except Exception as e:
+        logger.warning(f"State cleanup failed (non-fatal): {e}")
     if stuck_count > 0:
         logger.warning(f"Resolved {stuck_count} stuck players from previous session")
 
     # Устанавливаем ТОЛЬКО публичные команды (админ-команды скрыты)
     from telegram import BotCommand
     await app.bot.set_my_commands([
-        BotCommand("start",   "Главное меню"),
-        BotCommand("profile", "Твой профиль и снаряжение"),
-        BotCommand("pull",    "Использовать токен лута"),
-        BotCommand("setjob",  "Сменить класс (с 10 уровня)"),
-        BotCommand("align",   "Выбрать мировоззрение"),
+BotCommand("start",   "Главное меню"),
+        BotCommand("profile", "Твой профиль"),
+        BotCommand("loot",   "Открыть лут"),
+        BotCommand("top",    "Топ игроков"),
         BotCommand("quest",   "Текущий квест"),
-        BotCommand("top",     "Топ 10 игроков"),
-        BotCommand("online",  "Кто сейчас онлайн"),
+        BotCommand("maps",   "Карта мира"),
+        BotCommand("bosses", "Список боссов"),
         BotCommand("help",    "Список команд"),
     ])
 
@@ -197,7 +257,7 @@ def main():
     # БД создаём синхронно до старта event loop
     init_db()
 
-    from handlers import admin, user, alignment, jobs, listeners
+    from handlers import admin, user, alignment, jobs, listeners, maps
     from core.errors import global_error_handler
     from core.shutdown import GracefulShutdown, HealthChecker
 
@@ -262,6 +322,11 @@ def main():
     jobs.register(app)
     listeners.register(app)
     admin.register(app)
+    maps.register_handlers(app)
+    import handlers.bosses as bosses
+    bosses.register_handlers(app)
+    import handlers.quests as quests
+    quests.register_handlers(app)
 
     logging.info("Запуск %s v%s", cfg.GAME_NAME, cfg.VERSION)
     # run_polling управляет своим event loop — НЕ оборачиваем в asyncio.run()

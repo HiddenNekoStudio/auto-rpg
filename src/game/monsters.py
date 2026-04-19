@@ -21,6 +21,9 @@ from core.cache import TTLCache
 # Rate limiting — TTL cache вместо бесконечного dict
 _encounter_cooldown = TTLCache(ttl=2.0, maxsize=10000)
 
+# Серия побед игроков (win_streak для квестов)
+_win_streak = {}
+
 # Кэш DPS — инвалидируется при смене снаряжения
 _dps_cache = {}
 
@@ -30,6 +33,7 @@ monster_list = [
     "Двойник", "Кричащий Попугай", "Злобный Бродяга", "Профессиональный Дилетант",
     "Садистский Садист", "Стойкий Прокрастинатор", "Конвенционный Фурри",
     "Клацающие Крабы", "Позолоченный Дракон", "Удачливый Вор", "Военный Отряд",
+    "Дракон",
     "Бабуля", "Голодные Кровопийцы", "Пчела", "Косолапый Лесоруб",
     "Троглодит", "Ледяной Голем", "Теневой Вампир", "Костяной Рыцарь",
     "Морской Змей", "Кровавая Ведьма", "Огненный Элементаль",
@@ -41,6 +45,7 @@ monster_list_en = [
     "Doppelganger", "Screaming Parrot", "Evil Vagrant", "Professional Amateur",
     "Sadistic Sadist", "Stubborn Procrastinator", "Furry Convention",
     "Clacking Crabs", "Gilded Dragon", "Lucky Thief", "War Party",
+    "Dragon",
     "Grandma", "Hungry Bloodsuckers", "Bee", "Clumsy Lumberjack",
     "Troglodyte", "Ice Golem", "Shadow Vampire", "Bone Knight",
     "Sea Serpent", "Blood Witch", "Fire Elemental",
@@ -109,11 +114,15 @@ async def encounter_one(bot: Bot, player: Player, monster: str, monster_level: i
         effective_val = max(1, int(val * elf_mult))
         player.nextxp = max(player.currentxp + 1, player.nextxp - effective_val)
 
+        gold_reward = (monster_level * 5) + random.randint(0, player.level * 2)
+        player.gold += gold_reward
+
         if lang == "en":
             msg = "\n".join([
                 "⚔️ *Monster Encounter!*",
                 "", score_line, "",
                 f"🏆 *YOU WIN!* -{ctime(effective_val)} to level {player.level + 1}!",
+                f"💰 Gold: +{gold_reward}",
                 f"Next level in: *{ctime(player.nextxp - player.currentxp)}*",
             ])
         else:
@@ -121,6 +130,7 @@ async def encounter_one(bot: Bot, player: Player, monster: str, monster_level: i
                 "⚔️ *Встреча с монстром!*",
                 "", score_line, "",
                 f"🏆 *ТЫ ПОБЕДИЛ!* Бонус -{ctime(effective_val)} к уровню {player.level + 1}!",
+                f"💰 Золото: +{gold_reward}",
                 f"До след. уровня: *{ctime(player.nextxp - player.currentxp)}*",
             ])
 
@@ -160,7 +170,35 @@ async def encounter_one(bot: Bot, player: Player, monster: str, monster_level: i
                     f"До след. уровня: *{ctime(player.nextxp - player.currentxp)}*",
                 ])
 
-    await player.update(_columns=["nextxp", "totalxplost"])
+    await player.update(_columns=["nextxp", "totalxplost", "gold"])
+    
+    # Обновляем прогресс квестов
+    from handlers.quests import update_quest_progress
+    await update_quest_progress(player, "kill_monster", 1)
+    
+    # Триггеры для новых квестов: win_streak и death
+    if player_score >= monster_score:
+        # Победа - обновляем серию побед
+        current_streak = _win_streak.get(player.uid, 0) + 1
+        _win_streak[player.uid] = current_streak
+        
+        from game.quests import on_win_streak
+        await on_win_streak(player, current_streak)
+    else:
+        # Поражение - сбрасываем серию и триггерим death
+        _win_streak[player.uid] = 0
+        
+        from game.quests import on_death
+        await on_death(player)
+    
+    # NEW QUEST SYSTEM
+    try:
+        from game.quests import on_monster_defeated
+        await on_monster_defeated(player, monster)
+    except Exception as e:
+        import logging
+        logging.error(f"Quest progress error: {e}")
+    
     await send_to_players(bot, msg, player_uids=[player.uid])
 
 

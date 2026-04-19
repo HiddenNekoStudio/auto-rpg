@@ -25,6 +25,8 @@ services:
     environment:
       # Токен бота от @BotFather (обязательно)
       - TELEGRAM_TOKEN=${TELEGRAM_TOKEN:-placeholder}
+      # Admin IDs (получается у @userinfobot)
+      - ADMIN_IDS=${ADMIN_IDS:-}
       # Прокси через VPN контейнер
       - HTTP_PROXY=http://127.0.0.1:8080
       - HTTPS_PROXY=http://127.0.0.1:8080

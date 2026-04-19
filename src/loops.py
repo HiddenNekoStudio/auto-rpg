@@ -15,13 +15,19 @@ from game.events import randomevent
 from game.monsters import encounter, encounter_all
 from game.challenge import challenge_opp
 from i18n import t
+from data.locations import get_location_coords
+from handlers.quests import get_player_locked_quest
 
 # Счётчики
 _token_counter        = 0
 _global_event_counter = 0
 _monster_counter      = 0  # для встреч с монстрами каждые 1 час
+_daily_quest_counter = 0  # для ежедневных квестов
+_boss_respawn_counter = 0  # для респауна боссов каждые 4 дня
 
 GLOBAL_EVENT_INTERVAL = 5 * 3600  # 5 часов
+DAILY_QUEST_INTERVAL  = 24 * 3600  # 24 часа
+BOSS_RESPAWN_INTERVAL = 4 * 24 * 3600  # 4 дня
 
 
 async def levelup(bot, player: Player):
@@ -32,6 +38,9 @@ async def levelup(bot, player: Player):
     player.level    += 1
     player.currentxp = 0
     player.nextxp    = cfg.xp_for_level(player.level)
+
+    from game.quests import on_level_reached
+    await on_level_reached(player, player.level)
 
     item, slot, replaced = await get_item(player)
     
@@ -66,10 +75,11 @@ async def levelup(bot, player: Player):
 
 async def main_loop(bot):
     """Основной игровой тик."""
-    global _token_counter, _global_event_counter, _monster_counter
+    global _token_counter, _global_event_counter, _monster_counter, _boss_respawn_counter
     _token_counter        += cfg.INTERVAL
     _global_event_counter += cfg.INTERVAL
     _monster_counter      += cfg.INTERVAL
+    _boss_respawn_counter += cfg.INTERVAL
 
     # ── Оффлайн по таймауту ──────────────────────
     now   = int(datetime.today().timestamp())
@@ -107,8 +117,106 @@ async def main_loop(bot):
         return
 
     for player in players:
-        player.x = random.randint(player.x - 1, player.x + 1) % cfg.MAP_SIZE[0]
-        player.y = random.randint(player.y - 1, player.y + 1) % cfg.MAP_SIZE[1]
+        locked_quest = await get_player_locked_quest(player)
+        
+        if locked_quest:
+            target_loc_id = locked_quest.target_location_id
+            target_x, target_y = await get_location_coords(target_loc_id)
+            
+            if target_x is not None:
+                move_direction = random.choice(["north", "south", "east", "west"])
+                
+                if move_direction == "north" and player.y < target_y:
+                    player.y = min(player.y + 1, target_y)
+                elif move_direction == "south" and player.y > target_y:
+                    player.y = max(player.y - 1, target_y)
+                elif move_direction == "east" and player.x < target_x:
+                    player.x = min(player.x + 1, target_x)
+                elif move_direction == "west" and player.x > target_x:
+                    player.x = max(player.x - 1, target_x)
+                else:
+                    move_roll = random.random()
+                    if move_roll < 0.7:
+                        player.x = random.randint(player.x - 1, player.x + 1) % cfg.MAP_SIZE[0]
+                        player.y = random.randint(player.y - 1, player.y + 1) % cfg.MAP_SIZE[1]
+                    else:
+                        player.x = random.randint(player.x - 3, player.x + 5) % cfg.MAP_SIZE[0]
+                        player.y = random.randint(player.y - 3, player.y + 5) % cfg.MAP_SIZE[1]
+        else:
+            old_x, old_y = player.x, player.y
+            move_roll = random.random()
+            if move_roll < 0.7:
+                player.x = random.randint(player.x - 1, player.x + 1) % cfg.MAP_SIZE[0]
+                player.y = random.randint(player.y - 1, player.y + 1) % cfg.MAP_SIZE[1]
+            else:
+                player.x = random.randint(player.x - 3, player.x + 5) % cfg.MAP_SIZE[0]
+                player.y = random.randint(player.y - 3, player.y + 5) % cfg.MAP_SIZE[1]
+
+        if old_x != player.x or old_y != player.y:
+            from handlers.quests import check_location_quests
+            from game.quests import on_location_enter
+            from data.locations import find_location
+
+            await check_location_quests(bot, player)
+
+            loc = find_location(player.x, player.y)
+            if loc and loc.get("quest_enabled", False):
+                await on_location_enter(player, loc.get("id"))
+
+            from game.bosses import get_boss_at, send_boss_encounter_alert, resolve_battle
+            import json as json_module
+            import time
+            state_ctx = {}
+            try:
+                if player.state_context:
+                    state_ctx = json_module.loads(player.state_context) if isinstance(player.state_context, str) else player.state_context
+            except:
+                state_ctx = {}
+
+            boss, zone_type = await get_boss_at(player.x, player.y)
+            if boss and zone_type:
+                last_boss_id = state_ctx.get("last_boss_id")
+                last_boss_x = state_ctx.get("last_boss_x", 0)
+                last_boss_y = state_ctx.get("last_boss_y", 0)
+                boss_respawn = getattr(boss, 'respawn_available', 0) or 0
+                now = int(time.time())
+
+                # Проверяем: новый босс ИЛИ игрок вернулся после ухода
+                distance_from_cached = abs(player.x - last_boss_x) + abs(player.y - last_boss_y)
+                should_trigger = (
+                    last_boss_id != boss.boss_id or  # Новый босс
+                    distance_from_cached > 150  # Вернулся после ухода далеко
+                )
+
+                if should_trigger:
+                    lang = player.lang or "ru"
+                    await send_boss_encounter_alert(bot, player, boss, zone_type, lang)
+                    if zone_type == "auto":
+                        await resolve_battle(bot, player, boss, forced=True, lang=lang)
+
+                    # Сохраняем ID и позицию босса
+                    state_ctx["last_boss_id"] = boss.boss_id
+                    state_ctx["last_boss_x"] = boss.x
+                    state_ctx["last_boss_y"] = boss.y
+                    state_ctx["boss_respawn_at"] = boss_respawn
+                    player.state_context = json_module.dumps(state_ctx)
+                    await player.update(_columns=["state_context"])
+                elif boss_respawn and boss_respawn > now:
+                    pass  # Босс ещё не вернулся
+
+            # СБРОС last_boss_id когда игрок далеко от последнего босса (> 150 пикселей)
+            last_boss_id = state_ctx.get("last_boss_id")
+            last_boss_x = state_ctx.get("last_boss_x", 0)
+            last_boss_y = state_ctx.get("last_boss_y", 0)
+            if last_boss_id:
+                dist = abs(player.x - last_boss_x) + abs(player.y - last_boss_y)
+                if dist > 150:
+                    state_ctx.pop("last_boss_id", None)
+                    state_ctx.pop("last_boss_x", None)
+                    state_ctx.pop("last_boss_y", None)
+                    state_ctx.pop("boss_respawn_at", None)
+                    player.state_context = json_module.dumps(state_ctx)
+                    await player.update(_columns=["state_context"])
 
         if player.currentxp >= player.nextxp:
             await levelup(bot, player)
@@ -128,6 +236,13 @@ async def main_loop(bot):
         if players:
             await encounter_all(bot, players)
             logging.info("Встреча с монстром: %d игроков", len(players))
+
+    # ── Респаун боссов: каждые 4 дня ──────────────────────
+    if _boss_respawn_counter >= BOSS_RESPAWN_INTERVAL:
+        _boss_respawn_counter = 0
+        from game.bosses import check_and_spawn_bosses
+        await check_and_spawn_bosses(bot)
+        logging.info("Респаун боссов выполнен")
 
     # ── PVP встреча на карте ──────────────────────
     # Собираем dict {(x,y): [players]} за O(n) вместо N запросов
@@ -177,6 +292,14 @@ async def main_loop(bot):
 async def quest_loop(bot):
     """Тик квестов."""
     from ormar.exceptions import NoMatch
+    global _daily_quest_counter
+    
+    _daily_quest_counter += cfg.INTERVAL
+    if _daily_quest_counter >= DAILY_QUEST_INTERVAL:
+        _daily_quest_counter = 0
+        await generate_daily_quests(bot)
+        logging.info("Ежедневные квесты обновлены")
+    
     try:
         quest = await Quest.objects.get()
         count = (
@@ -194,6 +317,30 @@ async def quest_loop(bot):
             await endquest(bot, quest, win=False)
     except Exception:
         pass
+
+
+async def generate_daily_quests(bot):
+    """Генерация ежедневных квестов для всех игроков (новая система)."""
+    from db import PlayerQuest
+    from handlers.quests import offer_quest
+    from game.quests import can_offer_new_quests, get_quest_slots_available
+
+    players = await Player.objects.all()
+
+    if not players:
+        return
+
+    for player in players:
+        if not player.online:
+            continue
+
+        if not await can_offer_new_quests(player):
+            continue
+
+        if await get_quest_slots_available(player) <= 0:
+            continue
+
+        await offer_quest(bot, player, quest_type="daily", location=None)
 
 
 async def global_event(bot, players: list):

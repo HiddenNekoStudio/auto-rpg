@@ -13,8 +13,10 @@ from telegram.ext import Application, CommandHandler, CallbackQueryHandler, Cont
 
 import config as cfg
 from db import Player
+from data.locations import format_location
+from game.monsters import get_total_dps
 from loot import get_item
-from bot import ctime, item_string
+from bot import ctime, item_string, format_short
 from i18n import t, tip, CHANGELOG, CHANGELOG_EN
 from core.cache import TTLCache
 
@@ -83,6 +85,7 @@ def main_menu_keyboard(lang: str = "ru"):
             InlineKeyboardButton(t(lang, "btn_top"),      callback_data="menu_top"),
         ],
         [
+            InlineKeyboardButton(t(lang, "btn_maps"),    callback_data="menu_maps"),
             InlineKeyboardButton(t(lang, "btn_info"),    callback_data="menu_info"),
         ],
     ])
@@ -202,29 +205,117 @@ def _align_str(player) -> str:
 
 
 def _profile_text(player) -> str:
+    return _profile_text_sync(player)
+
+
+async def _profile_text_async(player) -> str:
+    """Асинхронная версия профиля с подсчётом квестов"""
+    from db import PlayerQuest
+    
     lang = player.lang or "ru"
     nextlevel = max(1, player.nextxp - player.currentxp)
     align     = _align_str(player)
-    qstring   = t(lang, "on_quest") if player.onquest else t(lang, "not_on_quest")
-    status    = t(lang, "online") if player.online else t(lang, "offline")
-    alert     = t(lang, "notif_on") if player.optin else t(lang, "notif_off")
+    
+    qstring = t(lang, "on_quest") if player.onquest else t(lang, "not_on_quest")
+    alert    = t(lang, "notif_on") if player.optin else t(lang, "notif_off")
+    
+    # Подсчёт квестов
+    active_quests = await PlayerQuest.objects.filter(
+        player_uid=player.uid,
+        status="active"
+    ).count()
+    offered_quests = await PlayerQuest.objects.filter(
+        player_uid=player.uid,
+        status="offered"
+    ).count()
+    
+    quest_info = ""
+    if active_quests > 0:
+        quest_info = f" | 🎯 {active_quests}кв"
+    if offered_quests > 0:
+        quest_info += f" | 📩 {offered_quests}нов"
+    if quest_info:
+        quest_info += " (/myquests)"
+    
     duel_str  = (t(lang, "profile_duels", wins=player.wins, loss=player.loss) + "\n") if cfg.ENABLE_COMBAT else ""
-
     race_str = _race_display(player)
+    location_str = format_location(player.x, player.y, lang)
+    status    = t(lang, "online") if player.online else t(lang, "offline")
+    player_dps = get_total_dps(player)
     text = (
-        t(lang, "profile_title", name=player.name) + "\n"
+        t(lang, "profile_title", name=player.name, status=status) + "\n"
         + t(lang, "profile_level", level=player.level) + "\n"
         + t(lang, "profile_race", race=race_str) + "\n"
         + t(lang, "profile_job", job=player.job) + "\n"
         + t(lang, "profile_align", align=align) + "\n"
+        + t(lang, "profile_gold", gold=format_short(player.gold)) + "\n"
+        + t(lang, "profile_xp", xp=format_short(player.totalxp)) + "\n"
         + t(lang, "profile_tokens", tokens=player.tokens) + "\n"
+        + f"⚔️ DPS: *{player_dps}*\n"
         + t(lang, "profile_nextlvl", time=ctime(nextlevel)) + "\n"
         + t(lang, "profile_total", time=ctime(player.totalxp)) + "\n"
         + duel_str
-        + t(lang, "profile_pos", x=player.x, y=player.y) + "\n"
-        + t(lang, "profile_status", quest=qstring, online=status, alert=alert) + "\n\n"
-        + t(lang, "profile_gear") + "\n"
     )
+    if location_str:
+        text += f"📍 Позиция: ({player.x}, {player.y}) - {location_str}\n"
+    else:
+        text += f"📍 Позиция: ({player.x}, {player.y})\n"
+
+    # Новый формат: квест и уведомления на разных строках
+    quest_status = f"🎯 Квест: {active_quests}"
+    alert_icon = "🔔" if player.optin else "🔕"
+    alert_status = "ВКЛ" if player.optin else "ВЫКЛ"
+
+    text += quest_status + "\n"
+    text += f"Уведомления: {alert_icon} {alert_status}\n\n"
+    text += t(lang, "profile_gear") + "\n"
+    for slot in cfg.WEAPON_SLOTS:
+        item = getattr(player, slot)
+        if item:
+            text += f"{SLOT_EMOJI.get(slot, '•')} {item_string(item)}\n"
+    return text
+
+
+def _profile_text_sync(player) -> str:
+    lang = player.lang or "ru"
+    nextlevel = max(1, player.nextxp - player.currentxp)
+    align     = _align_str(player)
+    
+    qstring = t(lang, "on_quest") if player.onquest else t(lang, "not_on_quest")
+    alert    = t(lang, "notif_on") if player.optin else t(lang, "notif_off")
+    
+    duel_str  = (t(lang, "profile_duels", wins=player.wins, loss=player.loss) + "\n") if cfg.ENABLE_COMBAT else ""
+    race_str = _race_display(player)
+    location_str = format_location(player.x, player.y, lang)
+    status    = t(lang, "online") if player.online else t(lang, "offline")
+    player_dps = get_total_dps(player)
+    text = (
+        t(lang, "profile_title", name=player.name, status=status) + "\n"
+        + t(lang, "profile_level", level=player.level) + "\n"
+        + t(lang, "profile_race", race=race_str) + "\n"
+        + t(lang, "profile_job", job=player.job) + "\n"
+        + t(lang, "profile_align", align=align) + "\n"
+        + t(lang, "profile_gold", gold=format_short(player.gold)) + "\n"
+        + t(lang, "profile_xp", xp=format_short(player.totalxp)) + "\n"
+        + t(lang, "profile_tokens", tokens=player.tokens) + "\n"
+        + f"⚔️ DPS: *{player_dps}*\n"
+        + t(lang, "profile_nextlvl", time=ctime(nextlevel)) + "\n"
+        + t(lang, "profile_total", time=ctime(player.totalxp)) + "\n"
+        + duel_str
+    )
+    if location_str:
+        text += f"📍 Позиция: ({player.x}, {player.y}) - {location_str}\n"
+    else:
+        text += f"📍 Позиция: ({player.x}, {player.y})\n"
+
+    # Новый формат: квест и уведомления на разных строках
+    quest_status = f"🎯 Квест: {active_quests}"
+    alert_icon = "🔔" if player.optin else "🔕"
+    alert_status = "ВКЛ" if player.optin else "ВЫКЛ"
+
+    text += quest_status + "\n"
+    text += f"Уведомления: {alert_icon} {alert_status}\n\n"
+    text += t(lang, "profile_gear") + "\n"
     for slot in cfg.WEAPON_SLOTS:
         item = getattr(player, slot)
         if item:
@@ -253,7 +344,7 @@ async def cmd_profile(update: Update, context: ContextTypes.DEFAULT_TYPE):
         ],
         [InlineKeyboardButton(t(lang, "menu"), callback_data="menu_back")],
     ])
-    await update.message.reply_text(_profile_text(player), parse_mode="Markdown",
+    await update.message.reply_text(await _profile_text_async(player), parse_mode="Markdown",
                                     reply_markup=keyboard)
 
 
@@ -316,7 +407,7 @@ async def callback_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
             ],
             [InlineKeyboardButton(t(lang, "menu"), callback_data="menu_back")],
         ])
-        await safe_edit(query, _profile_text(player), parse_mode="Markdown",
+        await safe_edit(query, await _profile_text_async(player), parse_mode="Markdown",
                         reply_markup=keyboard)
 
     elif action == "menu_quest":
@@ -365,6 +456,15 @@ async def callback_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
     elif action == "menu_info":
         await _show_info(query, lang)
 
+    elif action == "menu_bosses":
+        from game.bosses import format_boss_list
+        text = format_boss_list(lang)
+        await safe_edit(query, text, parse_mode="Markdown")
+
+    elif action == "menu_maps":
+        from handlers.maps import send_map_view
+        await send_map_view(query, player, lang)
+
     elif action == "menu_race":
         if not player:
             await safe_edit(query, t(lang, "not_registered"))
@@ -377,11 +477,11 @@ async def _show_pull_menu(query, player, lang):
     if not player:
         await safe_edit(query, t(lang, "not_registered"))
         return
-    text = t(lang, "loot_title", tokens=player.tokens)
+    text = t(lang, "loot_title", gold=player.gold)
     rows = []
-    if player.tokens > 0:
+    if player.gold > 0:
         btns = [InlineKeyboardButton(f"x{n}", callback_data=f"pull_{n}")
-                for n in [1, 3, 5, 10] if n <= player.tokens]
+                for n in [1, 3, 5, 10] if n <= player.gold]
         if btns:
             rows.append(btns)
     rows.append([InlineKeyboardButton(t(lang, "menu"), callback_data="menu_back")])
@@ -399,16 +499,16 @@ async def callback_pull(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not player:
         await safe_edit(query, t(lang, "not_registered"))
         return
-    if player.tokens < amount:
-        await query.answer(f"Only {player.tokens} tokens available.", show_alert=True)
+    if player.gold < amount:
+        await query.answer(f"Only {player.gold} gold available.", show_alert=True)
         return
     text = t(lang, "loot_found", name=player.name)
     for _ in range(amount):
         item, slot, replaced = await get_item(player)
         upgrade = t(lang, "loot_upgrade") if replaced else ""
         text += f"{item_string(item)}{upgrade}\n"
-    player.tokens -= amount
-    await player.update(_columns=["tokens"])
+    player.gold -= amount
+    await player.update(_columns=["gold"])
     keyboard = InlineKeyboardMarkup([[
         InlineKeyboardButton(t(lang, "loot_more"), callback_data="menu_pull"),
         InlineKeyboardButton(t(lang, "btn_profile"), callback_data="menu_profile"),
@@ -418,23 +518,53 @@ async def callback_pull(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 async def _show_quest(query, lang: str):
-    from db import Quest
-    quest = await Quest.objects.get_or_none()
-    keyboard = InlineKeyboardMarkup([[
-        InlineKeyboardButton(t(lang, "refresh"), callback_data="menu_quest"),
-        InlineKeyboardButton(t(lang, "menu"),    callback_data="menu_back"),
-    ]])
-    if not quest:
-        await safe_edit(query, t(lang, "quest_none"), reply_markup=keyboard)
+    """Показать список квестов - НОВАЯ СИСТЕМА"""
+    import time
+    from db import PlayerQuest
+    
+    player = await Player.objects.get_or_none(uid=query.from_user.id)
+    if not player:
+        await safe_edit(query, t(lang, "not_registered"))
         return
-    remaining = quest.deadline - int(datetime.now().timestamp())
-    text = (
-        t(lang, "quest_title") + "\n"
-        + t(lang, "quest_players", players=quest.players) + "\n"
-        + t(lang, "quest_goal", goal=quest.goal) + "\n"
-        + t(lang, "quest_progress", time=ctime(quest.endxp - quest.currentxp)) + "\n"
-        + t(lang, "quest_deadline", time=ctime(max(0, remaining)))
-    )
+    
+    quests = await PlayerQuest.objects.filter(
+        player_uid=player.uid,
+        status="active"
+    ).all()
+    
+    if not quests:
+        keyboard = InlineKeyboardMarkup([
+            [InlineKeyboardButton("🏠 Меню", callback_data="menu_back")]
+        ])
+        await safe_edit(query, "🎯 *Мои квесты*\n\nНет активных квестов", 
+                       parse_mode="Markdown", reply_markup=keyboard)
+        return
+    
+    lines = ["🎯 *Мои квесты*", ""]
+    
+    for i, q in enumerate(quests, 1):
+        deadline = ""
+        if q.expires_at:
+            left = q.expires_at - int(time.time())
+            if left > 0:
+                hours = left // 3600
+                minutes = (left % 3600) // 60
+                deadline = f" ⏰ {hours}ч {minutes}мин"
+            else:
+                deadline = " ⛔"
+        
+        lines.append(f"{i}. {q.title}")
+        lines.append(f"   ⏳ {q.progress}/{q.target_count}{deadline}")
+        lines.append(f"   🎁 +{q.reward_xp} XP, +{q.reward_gold} Gold")
+        lines.append("")
+    
+    text = "\n".join(lines)
+    
+    keyboard = InlineKeyboardMarkup([
+        [InlineKeyboardButton("🔄 Обновить", callback_data="menu_quest")],
+        [InlineKeyboardButton("🏠 Меню", callback_data="menu_back")]
+    ])
+    
     await safe_edit(query, text, parse_mode="Markdown", reply_markup=keyboard)
 
 
@@ -498,18 +628,18 @@ async def cmd_pull(update: Update, context: ContextTypes.DEFAULT_TYPE):
             amount = max(1, min(10, int(context.args[0])))
         except ValueError:
             pass
-    if player.tokens < 1:
-        await update.message.reply_text(t(lang, "no_tokens"))
+    if player.gold < 1:
+        await update.message.reply_text(t(lang, "no_gold"))
         return
-    if amount > player.tokens:
-        amount = player.tokens
+    if amount > player.gold:
+        amount = player.gold
     text = t(lang, "loot_found", name=player.name)
     for _ in range(amount):
         item, slot, replaced = await get_item(player)
         upgrade = t(lang, "loot_upgrade") if replaced else ""
         text += f"{item_string(item)}{upgrade}\n"
-    player.tokens -= amount
-    await player.update(_columns=["tokens"])
+    player.gold -= amount
+    await player.update(_columns=["gold"])
     keyboard = InlineKeyboardMarkup([[
         InlineKeyboardButton(t(lang, "loot_more"),   callback_data="menu_pull"),
         InlineKeyboardButton(t(lang, "btn_profile"), callback_data="menu_profile"),

@@ -69,6 +69,73 @@ class Quest(ormar.Model):
     deadline: int = ormar.Integer()
 
 
+class PlayerQuest(ormar.Model):
+    """Новая система квестов - гибкая архитектура."""
+    ormar_config = basemeta.copy(tablename="player_quests")
+
+    id: int = ormar.Integer(primary_key=True)
+    player_uid: int = ormar.BigInteger(index=True)
+    
+    # Legacy fields from old system (set to defaults for new quests)
+    quest_id: int = ormar.Integer(default=0)
+    quest_id_str: str = ormar.String(max_length=50, default="")  # Legacy string ID
+    location_name: str = ormar.String(max_length=100, default="")
+    location_x: int = ormar.Integer(default=0)
+    location_y: int = ormar.Integer(default=0)
+    
+    # ID и тип
+    quest_key: str = ormar.String(max_length=36, unique=True, default="")  # UUID для callback
+    quest_type: str = ormar.String(max_length=20)  # location/daily/story/periodic
+    category: str = ormar.String(max_length=30)  # kill_monster/kill_boss/earn_xp/win_duel/explore
+    
+    # Описание
+    title: str = ormar.Text()
+    description: str = ormar.Text()
+    
+    # Цель
+    location_id: str = ormar.String(max_length=30, default="")  # Локация получения
+    target_type: str = ormar.String(max_length=20, default="")  # monster/boss/xp/location/player
+    target_id: str = ormar.String(max_length=50, default="")  # ID цели (boss_id, "goblin", "xp")
+    target_count: int = ormar.Integer(default=1)
+    progress: int = ormar.Integer(default=0)
+    
+    # Награды
+    reward_xp: int = ormar.Integer(default=0)
+    reward_gold: int = ormar.Integer(default=0)
+    reward_item: str = ormar.String(max_length=100, default="")  # Для story
+    
+    # Статус и время
+    status: str = ormar.String(max_length=20, default="offered")  # offered/active/completed/failed/abandoned
+    expires_at: int = ormar.Integer(default=0)  # Unix timestamp дедлайна
+    created_at: int = ormar.Integer(default=int(datetime.now().timestamp()))
+    accepted_at: int = ormar.Integer(default=0)  # Unix timestamp принятия
+    completed_at: int = ormar.Integer(default=0)
+    
+    # Anti-spam
+    cooldown_until: int = ormar.Integer(default=0)  # Unix timestamp кулдауна
+    last_progress_at: int = ormar.Integer(default=0)
+
+
+class Boss(ormar.Model):
+    ormar_config = basemeta.copy(tablename="bosses")
+
+    id: int = ormar.Integer(primary_key=True)
+    boss_id: str = ormar.String(max_length=20, unique=True)
+    title: str = ormar.String(max_length=100)
+    location_name: str = ormar.String(max_length=100)
+    x: int = ormar.Integer()
+    y: int = ormar.Integer()
+    level: int = ormar.Integer()
+    equipment: dict = ormar.JSON(default=dict)
+    defeated: bool = ormar.Boolean(default=False)
+    defeated_at: int = ormar.Integer(default=0)
+    defeated_by: int = ormar.BigInteger(default=0)
+    respawn_available: int = ormar.Integer(default=0)
+    respawn_cost: int = ormar.Integer(default=50)
+    difficulty: str = ormar.String(max_length=20, default="medium")
+    legendary_counter: int = ormar.Integer(default=0)
+
+
 class Player(ormar.Model):
     ormar_config = basemeta.copy(
         tablename="users",
@@ -98,7 +165,9 @@ class Player(ormar.Model):
     race: str = ormar.String(max_length=20, default="")
     state: str = ormar.String(max_length=20, default="peaceful")
     state_context: str = ormar.Text(default="{}")
-    tokens: int = ormar.Integer(default=0)
+    tokens: int = ormar.Integer(default=0)  # Токены за онлайн (12ч), для премиума
+    gold: int = ormar.Integer(default=0)
+    quest_cooldown: int = ormar.Integer(default=0)  # Timestamp кулдауна квестов
     weapon: str = ormar.JSON(default={
         "name": "Кулаки", "quality": "Базовый", "condition": "Пыльный",
         "prefix": "", "suffix": "", "dps": 20, "rank": "Common", "flair": None,

@@ -23,6 +23,7 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 # Исходники — меняются часто
 COPY src/ ./src/
+COPY maps/ ./maps/
 
 # Entrypoint script
 COPY docker/entrypoint.sh /entrypoint.sh
@@ -32,13 +33,14 @@ RUN chmod +x /entrypoint.sh
 RUN mkdir -p /data
 
 # =============================================
-# ENV — корректный проброс
+# ENV — from environment variables (passed by docker-compose)
 # =============================================
-ENV TELEGRAM_TOKEN="$TELEGRAM_TOKEN"
-ENV DB_TYPE="sqlite+aiosqlite"
-ENV DB_PATH="/data/autorpg.db"
-ENV DBTYPE="${DB_TYPE}"
-ENV HEALTH_PORT=8081
+ENV TELEGRAM_TOKEN="${TELEGRAM_TOKEN}"
+ENV ADMIN_IDS="${ADMIN_IDS}"
+ENV DB_TYPE="${DB_TYPE:-sqlite+aiosqlite}"
+ENV DB_PATH="${DB_PATH:-/data/autorpg.db}"
+ENV DBTYPE="${DBTYPE}"
+ENV HEALTH_PORT="${HEALTH_PORT:-8081}"
 
 # =============================================
 # Healthcheck для Docker

@@ -157,4 +157,8 @@ async def challenge_opp(player: Player, opp: Optional[Player] = None) -> Tuple[s
     await player.update(_columns=["nextxp", "totalxplost", "wins", "loss"])
     await opp.update(_columns=["nextxp", "wins", "loss"])
 
+    from handlers.quests import update_quest_progress
+    await update_quest_progress(player, "win_duel", 1)
+    await update_quest_progress(opp, "win_duel", 1)
+
     return msg_p, msg_o

@@ -27,16 +27,25 @@ STRINGS = {
         "btn_info":         "ℹ️ О игре",
 
         # Профиль
-        "profile_title":    "👤 *Профиль: {name}*\n━━━━━━━━━━━━━━━━━━",
+        "profile_title":    "👤 *Профиль: {name}* {status}\n━━━━━━━━━━━━━━━━━━",
         "profile_level":    "🎖️ Уровень: *{level}*",
         "profile_job":      "💼 Класс: *{job}*",
         "profile_align":    "⚖️ Мировоззрение: {align}",
-        "profile_tokens":   "🎫 Токены лута: *{tokens}*",
+        "profile_gold":     "💰 Золото: *{gold}*",
+        "profile_xp":       "⚡ XP: *{xp}*",
+        "profile_tokens":   "🎫 Токены: *{tokens}*",
         "profile_nextlvl":  "⏱️ До след. уровня: *{time}*",
         "profile_total":    "🕐 Всего в игре: *{time}*",
         "profile_duels":    "⚔️ Дуэли: {wins}П / {loss}П",
         "profile_pos":      "📍 Позиция: ({x}, {y})",
-        "profile_status":   "{quest} | {online} | Уведомления: {alert}",
+        "map_title":        "🗺️ *Карта — Вид {cx},{cy}*",
+        "map_nearby":       "📍 Игроки поблизости:",
+        "map_center":       "🏰 Центр",
+        "map_mypos":        "📍 Моя позиция",
+        "map_coords":      "Координаты: {x},{y}",
+        "map_refresh":     "🔄 Обновить",
+        "quest_active":    "Квест: {goal}",
+        "profile_status":   "{quest} | Уведомления: {alert}",
         "profile_gear":     "🎒 *Снаряжение:*",
         "btn_loot":         "🎁 Использовать лут",
 
@@ -52,11 +61,11 @@ STRINGS = {
         "notif_off":        "🔕 ВЫКЛ",
 
         # Лут
-        "loot_title":       "🎁 *Токены лута*\n\nУ тебя: *{tokens}* токен(ов)\nТокены выдаются каждые 12 часов онлайна.\n\nСколько использовать?",
+        "loot_title":       "🎁 *Сундук с сокровищами*\n\nУ тебя: *{gold}* золота\n\nСколько использовать?",
         "loot_found":       "🎁 *{name} находит сундук с сокровищами!*\n\n",
         "loot_upgrade":     " ⬆️ *УЛУЧШЕНИЕ!*",
         "loot_more":        "🎁 Ещё лут",
-        "no_tokens":        "У тебя нет токенов лута! Токен выдаётся каждые 12 часов онлайна. 🎫",
+        "no_gold":        "У тебя нет золота! Заработай больше. 💰",
 
         # Настройки
         "settings_title":   "⚙️ *Настройки персонажа*\n\nЧто хочешь изменить?",
@@ -82,6 +91,18 @@ STRINGS = {
         "quest_goal":       "🎯 Задача: {goal}",
         "quest_progress":   "⏳ Прогресс: {time} осталось",
         "quest_deadline":   "⏰ Дедлайн через: {time}",
+        "quest_active":     "Квест: {goal}",
+
+        # Индивидуальные квесты на локациях
+        "location_quest_new":   "🎯 *Новый квест в локации!*\n\n*{title}*\n\n{desc}\n\n📍 Локация: {location}\n\n🎁 Награда: XP +{xp} | Золото +{gold}\n\nПринять?",
+        "location_quest_accept":    "✅ Квест принят!",
+        "location_quest_decline":   "❌ Квест отклонён",
+        "location_quest_progress":  "🎯 *Прогресс квеста:*\n\n*{title}*\n\n📍 {location}\n\n⏳ Прогресс: {progress}/{target}\n\n🎁 Награда: XP +{xp} | Золото +{gold}",
+        "location_quest_complete":  "✅ *Квест выполнен!*\n\n*{title}*\n\n🎁 Награда получена:\n• XP: +{xp}\n• Золото: +{gold}",
+        "quest_daily_title":    "📅 *Ежедневные к��есты*",
+        "quest_daily_complete":  "✅ Ежедневные квесты обновлены!",
+        "quest_my_quests":      "🎯 *Мои квесты*",
+        "quest_no_quests":      "У тебя нет активных квестов.",
 
         # Топ
         "top_title":        "🏆 *Топ 10 игроков*",
@@ -109,6 +130,15 @@ STRINGS = {
 
         # Глобальное событие
         "global_event_msg": "⚡ *Мировое событие!*\n\nБоги обратили взор на королевство...\n{event_text}",
+
+        # Боссы
+        "boss_zone": "⚠️ *ЗОНА БОССА!*\n\n*{title}*\n📍 {location} ({x}, {y})\n🎓 Уровень: *{level}*\n⚔️ Шанс победы: *{chance}%*\n\n{item_info}\n\nВыбери действие:",
+        "boss_encounter": "⚠️ *ВСТРЕЧА С БОССОМ!*\n\n*{title}*\n📍 {location}\n🎓 Уровень: *{level}*\n⚔️ Шанс победы: *{chance}%*\n\n🔄 *АВТОМАТИЧЕСКИЙ БОЙ!*",
+        "boss_victory": "👑 *ПОБЕДА НАД БОССОМ!*\n\n*{title}* повержен!\n📍 {location}\n\n🏆 *НАГРОДА:*\n{item}\n\n🎖️ XP-бонус: -{time} до уровня {next_level}!",
+        "boss_defeat": "💀 *ПОРАЖЕНИЕ ОТ БОССА!*\n\n*{title}* оказался сильнее...\n📍 {location}\n\n⏱️ Штраф: *+{time}*\n📉 Уровень понижен до: *{level}*\n🗡️ {slot} ухудшен: {item_name}\n\nБосс вернётся через {days} дней.",
+        "boss_list_title": "🏰 *Список боссов:*",
+        "btn_bosses": "👹 Боссы",
+        "btn_maps": "🗺️ Карта",
     },
 
     "en": {
@@ -135,16 +165,25 @@ STRINGS = {
         "btn_info":         "ℹ️ About",
 
         # Profile
-        "profile_title":    "👤 *Profile: {name}*\n━━━━━━━━━━━━━━━━━━",
+        "profile_title":    "👤 *Profile: {name}* {status}\n━━━━━━━━━━━━━━━━━━",
         "profile_level":    "🎖️ Level: *{level}*",
         "profile_job":      "💼 Class: *{job}*",
         "profile_align":    "⚖️ Alignment: {align}",
-        "profile_tokens":   "🎫 Loot tokens: *{tokens}*",
+        "profile_gold":    "💰 Gold: *{gold}*",
+        "profile_xp":      "⚡ XP: *{xp}*",
+        "profile_tokens":   "🎫 Tokens: *{tokens}*",
         "profile_nextlvl":  "⏱️ Next level in: *{time}*",
         "profile_total":    "🕐 Total playtime: *{time}*",
         "profile_duels":    "⚔️ Duels: {wins}W / {loss}L",
         "profile_pos":      "📍 Position: ({x}, {y})",
-        "profile_status":   "{quest} | {online} | Notifications: {alert}",
+        "map_title":        "🗺️ *Map — View {cx},{cy}*",
+        "map_nearby":       "📍 Nearby players:",
+        "map_center":       "🏰 Center",
+        "map_mypos":        "📍 My position",
+        "map_coords":      "Coords: {x},{y}",
+        "map_refresh":     "🔄 Refresh",
+        "quest_active":    "Quest: {goal}",
+        "profile_status":   "{quest} | Notifications: {alert}",
         "profile_gear":     "🎒 *Equipment:*",
         "btn_loot":         "🎁 Use loot",
 
@@ -160,11 +199,11 @@ STRINGS = {
         "notif_off":        "🔕 OFF",
 
         # Loot
-        "loot_title":       "🎁 *Loot tokens*\n\nYou have: *{tokens}* token(s)\nTokens are given every 12 hours online.\n\nHow many to use?",
+        "loot_title":       "🎁 *Treasure Chest*\n\nYou have: *{gold}* gold\n\nHow many to open?",
         "loot_found":       "🎁 *{name} finds a treasure chest!*\n\n",
         "loot_upgrade":     " ⬆️ *UPGRADE!*",
         "loot_more":        "🎁 More loot",
-        "no_tokens":        "You have no loot tokens! You get 1 token every 12 hours online. 🎫",
+        "no_gold":        "You have no gold! Earn more. 💰",
 
         # Settings
         "settings_title":   "⚙️ *Character settings*\n\nWhat would you like to change?",
@@ -190,6 +229,22 @@ STRINGS = {
         "quest_goal":       "🎯 Goal: {goal}",
         "quest_progress":   "⏳ Progress: {time} remaining",
         "quest_deadline":   "⏰ Deadline in: {time}",
+        "quest_active":     "Quest: {goal}",
+
+        # Location quests
+        "location_quest_new":   "🎯 *New quest at location!*\n\n*{title}*\n\n{desc}\n\n📍 Location: {location}\n\n🎁 Reward: XP +{xp} | Gold +{gold}\n\nAccept?",
+        "location_quest_accept":    "✅ Quest accepted!",
+        "location_quest_decline":   "❌ Quest declined",
+        "location_quest_progress":  "🎯 *Quest progress:*\n\n*{title}*\n\n📍 {location}\n\n⏳ Progress: {progress}/{target}\n\n🎁 Reward: XP +{xp} | Gold +{gold}",
+        "location_quest_complete":  "✅ *Quest completed!*\n\n*{title}*\n\n🎁 Reward received:\n• XP: +{xp}\n• Gold: +{gold}",
+        "quest_location_locked":   "🔒 *Completion location:* {location}",
+        "quest_blocked_info":       "⛔ You are blocked at this location until you complete the quest!",
+        "quest_unlocked":           "🔓 Quest completed! Lock removed.",
+
+        "quest_daily_title":    "📅 *Daily quests*",
+        "quest_daily_complete":  "✅ Daily quests updated!",
+        "quest_my_quests":      "🎯 *My quests*",
+        "quest_no_quests":      "You have no active quests.",
 
         # Top
         "top_title":        "🏆 *Top 10 Players*",
@@ -224,6 +279,15 @@ STRINGS = {
 
         # Global event
         "global_event_msg": "⚡ *World Event!*\n\nThe gods turn their gaze to the kingdom...\n{event_text}",
+
+        # Bosses
+        "boss_zone": "⚠️ *BOSS ZONE!*\n\n*{title}*\n📍 {location} ({x}, {y})\n🎓 Level: *{level}*\n⚔️ Victory chance: *{chance}%*\n\n{item_info}\n\nChoose action:",
+        "boss_encounter": "⚠️ *BOSS ENCOUNTER!*\n\n*{title}*\n📍 {location}\n🎓 Level: *{level}*\n⚔️ Victory chance: *{chance}%*\n\n🔄 *AUTOBATTLE!*",
+        "boss_victory": "👑 *BOSS DEFEATED!*\n\n*{title}* has been slain!\n📍 {location}\n\n🏆 *REWARD:*\n{item}\n\n🎖️ XP-bonus: -{time} to level {next_level}!",
+        "boss_defeat": "💀 *DEFEATED BY BOSS!*\n\n*{title}* was too strong...\n📍 {location}\n\n⏱️ Penalty: *+{time}*\n📉 Level reduced to: *{level}*\n🗡️ {slot} downgraded: {item_name}\n\nBoss returns in {days} days.",
+        "boss_list_title": "🏰 *Boss list:*",
+        "btn_bosses": "👹 Bosses",
+        "btn_maps": "🗺️ Map",
     },
 }
 

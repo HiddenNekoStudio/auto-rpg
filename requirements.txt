@@ -6,6 +6,7 @@ sqlalchemy
 databases[aiosqlite]
 aiosqlite
 aiohttp
+Pillow
 
 # Redis для кэширования (опционально):
 # redis>=5.0.0

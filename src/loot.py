@@ -217,4 +217,10 @@ async def get_item(player: Player):
         # Инвалидируем кэш DPS
         from game.monsters import invalidate_dps_cache
         invalidate_dps_cache(player.uid)
+    
+    # Триггер для квестов редкого дропа
+    if item.get("rank") in ("Rare", "Epic", "Legendary", "Ascended"):
+        from game.quests import on_rare_drop
+        await on_rare_drop(player, item["rank"])
+    
     return item, slot.name, replaced

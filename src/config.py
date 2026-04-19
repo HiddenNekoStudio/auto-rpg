@@ -4,6 +4,39 @@ config.py - Telegram AutoRPG Configuration
 import os
 
 # =============================================
+# Load .env FIRST - before any config is read
+# =============================================
+def load_env_file():
+    """Load environment variables from .env file."""
+    # Try common Docker/local paths
+    paths_to_try = [
+        "/app/.env",
+        "/data/.env", 
+        os.path.join(os.path.dirname(__file__), "..", ".env"),
+        os.path.join(os.path.dirname(__file__), ".env"),
+    ]
+    
+    for path in paths_to_try:
+        print(f"Checking .env at: {path} (exists: {os.path.exists(path)})")
+        if os.path.exists(path):
+            with open(path, encoding="utf-8") as f:
+                content = f.read()
+                print(f".env content preview: {content[:200]}...")
+                f.seek(0)
+                for line in f:
+                    line = line.strip()
+                    if line and not line.startswith("#") and "=" in line:
+                        key, val = line.split("=", 1)
+                        os.environ[key.strip()] = val.strip()
+                        print(f"Set env: {key.strip()} = {val.strip()[:20]}...")
+            return True
+    return False
+
+load_env_file()
+print(f"TELEGRAM_TOKEN: {os.environ.get('TELEGRAM_TOKEN', 'NOT SET')[:30] if os.environ.get('TELEGRAM_TOKEN') else 'NOT SET'}")
+print(f"ADMIN_IDS: {os.environ.get('ADMIN_IDS', 'NOT SET')}")
+
+# =============================================
 #   ОБЯЗАТЕЛЬНЫЕ НАСТРОЙКИ
 # =============================================
 
@@ -20,17 +53,14 @@ TELEGRAM_PROXY = os.getenv("TELEGRAM_PROXY")
 # Telegram ID администраторов (можно узнать у @userinfobot)
 # Список ID администраторов через запятую: ADMIN_IDS=123456789,987654321
 def _parse_admin_ids():
-    raw = os.getenv("ADMIN_IDS", "")
-    if not raw.strip():
-        return []
-    result = []
-    for part in raw.split(","):
-        part = part.strip()
-        if part.isdigit():
-            result.append(int(part))
-        else:
-            print(f"Warning: Ignoring non-numeric ADMIN_ID: {part}")
-    return result
+    admin_ids = []
+    raw = os.environ.get("ADMIN_IDS", "")
+    if raw:
+        for part in raw.split(","):
+            part = part.strip()
+            if part.isdigit():
+                admin_ids.append(int(part))
+    return admin_ids
 
 SERVER_ADMINS = _parse_admin_ids()
 
@@ -85,8 +115,8 @@ def xp_for_level(level: int) -> int:
     return int(TIME_BASE * (TIME_EXP ** (level + 1)))
 # Включить PVP
 ENABLE_COMBAT = True
-# Интервал автоматической встречи с монстрами (секунды), 3600 = 1 час
-MONSTER_INTERVAL = _safe_int(os.getenv("MONSTER_INTERVAL"), 1800)
+# Интервал автоматической встречи с монстрами (секунды), 300 = 5 минут
+MONSTER_INTERVAL = _safe_int(os.getenv("MONSTER_INTERVAL"), 60)  # 1 минута (было 5 минут)
 
 # Расы и их бонусы
 RACES = {
