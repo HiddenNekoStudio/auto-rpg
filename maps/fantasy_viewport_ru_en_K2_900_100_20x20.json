@@ -1,0 +1,35 @@
+{
+  "viewport_center": [900, 100],
+  "viewport_size": [20, 20],
+  "viewport_bounds": [890, 909, 90, 109],
+  "map_size": [1000, 1000],
+  "kingdoms_in_view": ["K2"],
+  "players_in_view": [
+    {"id": "P1", "label_ru": "Вы", "label_en": "You", "coord": [900, 100], "avatar_url": null}
+  ],
+  "cities_in_view": [
+    {"kingdom_id":"K2","city_id":"K2-C1_inview","name_ru":"Златоград","name_en":"Goldengrad","coord":[895,95],"avatar_url":null},
+    {"kingdom_id":"K2","city_id":"K2-C2_inview","name_ru":"Янтарный Холм","name_en":"Amberhill","coord":[900,100],"avatar_url":null},
+    {"kingdom_id":"K2","city_id":"K2-C3_inview","name_ru":"Солярис","name_en":"Solarium","coord":[905,109],"avatar_url":null},
+    {"kingdom_id":"K2","city_id":"K2-C4_inview","name_ru":"Светлый Форт","name_en":"Lightfort","coord":[890,105],"avatar_url":null},
+    {"kingdom_id":"K2","city_id":"K2-C5_inview","name_ru":"Золотой Край","name_en":"Goldendedge","coord":[909,100],"avatar_url":null},
+    {"kingdom_id":"K2","city_id":"K2-C6_inview","name_ru":"Гранитная Гавань","name_en":"Granite Haven","coord":[900,90],"avatar_url":null},
+    {"kingdom_id":"K2","city_id":"K2-C7_inview","name_ru":"Эмеральд Холл","name_en":"Emerald Hall","coord":[897,105],"avatar_url":null},
+    {"kingdom_id":"K2","city_id":"K2-C8_inview","name_ru":"Бриллиантовый Притон","name_en":"Diamond Den","coord":[901,92],"avatar_url":null},
+    {"kingdom_id":"K2","city_id":"K2-C9_inview","name_ru":"Солнечный Пик","name_en":"Solar Peak","coord":[906,104],"avatar_url":null},
+    {"kingdom_id":"K2","city_id":"K2-C10_inview","name_ru":"Белый Глаз","name_en":"White Eye","coord":[898,109],"avatar_url":null}
+  ],
+  "suburbs_in_view": [
+    {"id":"K2-S1_inview","name_ru":"Прибрежный залив","name_en":"Coast Cove","coord":[891,92]},
+    {"id":"K2-S2_inview","name_ru":"Зелёные холмы","name_en":"Green Hills","coord":[892,96]},
+    {"id":"K2-S3_inview","name_ru":"Тихий ручей","name_en":"Quiet Creek","coord":[895,100]},
+    {"id":"K2-S4_inview","name_ru":"Лесная полоса","name_en":"Forest Strip","coord":[899,105]},
+    {"id":"K2-S5_inview","name_ru":"Склон ветров","name_en":"Wind Slope","coord":[898,97]},
+    {"id":"K2-S6_inview","name_ru":"Старый порт","name_en":"Oldport","coord":[900,101]},
+    {"id":"K2-S7_inview","name_ru":"Белый лес","name_en":"Whitewood","coord":[897,99]},
+    {"id":"K2-S8_inview","name_ru":"Гавань теней","name_en":"Harbor of Shadows","coord":[904,94]},
+    {"id":"K2-S9_inview","name_ru":"Рыбацкий зал","name_en":"Fishers' Cove","coord":[909,96]},
+    {"id":"K2-S10_inview","name_ru":"Залив звезд","name_en":"Starry Cove","coord":[898,109]}
+  ],
+  "notes": "Viewport for K2 center. Real cities inside 20x20 window."
+}

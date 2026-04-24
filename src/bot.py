@@ -19,6 +19,13 @@ import config as cfg
 import sqlalchemy
 from db import database, engine, metadata
 
+# Глобальный экземпляр бота (доступен после старта)
+_bot_instance: Bot | None = None
+
+def get_bot() -> Bot | None:
+    """Получить экземпляр бота. Возвращает None до старта."""
+    return _bot_instance
+
 # ──────────────────────────────────────────────
 # Вспомогательные функции (общие для всех модулей)
 # ──────────────────────────────────────────────
@@ -126,6 +133,7 @@ def init_db():
         "ALTER TABLE users ADD COLUMN race VARCHAR(20) NOT NULL DEFAULT ''",  # расы
         "ALTER TABLE users ADD COLUMN state VARCHAR(20) NOT NULL DEFAULT 'peaceful'",
         "ALTER TABLE users ADD COLUMN state_context TEXT NOT NULL DEFAULT '{}'",
+        "ALTER TABLE users ADD COLUMN auto_accept_quests VARCHAR(10) DEFAULT 'off'",
     ]
     
     # Миграции для player_quests
@@ -183,9 +191,12 @@ def init_db():
 
 async def post_init(app: Application) -> None:
     """Вызывается после старта бота — подключаем БД, задаём команды и запускаем циклы."""
+    global _bot_instance
     from health import set_db_connected
     from game.bosses import init_bosses
     from game.states import StateManager
+    
+    _bot_instance = app.bot
     
     await database.connect()
     set_db_connected(True)

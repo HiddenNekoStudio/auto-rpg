@@ -1,0 +1,32 @@
+{
+  "viewport_center": [900, 900],
+  "viewport_size": [20, 20],
+  "viewport_bounds": [890, 909, 890, 909],
+  "map_size": [1000, 1000],
+  "kingdoms_in_view": ["K4"],
+  "cities_in_view": [
+    {"kingdom_id":"K4","city_id":"K4-C1_inview","name_ru":"Сереброград","name_en":"Silvergrad","coord":[895,895]},
+    {"kingdom_id":"K4","city_id":"K4-C2_inview","name_ru":"Белый Холм","name_en":"Whitecrest","coord":[909,900]},
+    {"kingdom_id":"K4","city_id":"K4-C3_inview","name_ru":"Лазурная Гавань","name_en":"Azure Haven","coord":[900,910]},
+    {"kingdom_id":"K4","city_id":"K4-C4_inview","name_ru":"Риф Спокойствия","name_en":"Calmshore","coord":[890,900]},
+    {"kingdom_id":"K4","city_id":"K4-C5_inview","name_ru":"Снежный Берег","name_en":"Snowport","coord":[905,905]},
+    {"kingdom_id":"K4","city_id":"K4-C6_inview","name_ru":"Сияющая Роща","name_en":"Shining Grove","coord":[890,915]},
+    {"kingdom_id":"K4","city_id":"K4-C7_inview","name_ru":"Гавань Стального Льда","name_en":"Harbor of Steel Ice","coord":[908,898]},
+    {"kingdom_id":"K4","city_id":"K4-C8_inview","name_ru":"Небесная Скала","name_en":"Skyward Cliff","coord":[892,902]},
+    {"kingdom_id":"K4","city_id":"K4-C9_inview","name_ru":"Каменная Плесень","name_en":"Stonehaven","coord":[900,888]},
+    {"kingdom_id":"K4","city_id":"K4-C10_inview","name_ru":"Северный Порт","name_en":"North Port","coord":[895,902]}
+  ],
+  "suburbs_in_view": [
+    {"id":"K4-S1_inview","name_ru":"Горная тропа","name_en":"Mountain Trail","coord":[891,891]},
+    {"id":"K4-S2_inview","name_ru":"Холодная бухта","name_en":"Ice Cove","coord":[892,895]},
+    {"id":"K4-S3_inview","name_ru":"Снежная усадьба","name_en":"Snowstead","coord":[895,900]},
+    {"id":"K4-S4_inview","name_ru":"Сияющий каньон","name_en":"Shine Canyon","coord":[899,898]},
+    {"id":"K4-S5_inview","name_ru":"Ледяной пруд","name_en":"Ice Pond","coord":[898,892]},
+    {"id":"K4-S6_inview","name_ru":"Белый луг","name_en":"White Meadow","coord":[902,901]},
+    {"id":"K4-S7_inview","name_ru":"Гавань золота","name_en":"Gold Harbor","coord":[908,895]},
+    {"id":"K4-S8_inview","name_ru":"Обрыв Сквозь","name_en":"Ridge Through","coord":[899,909]},
+    {"id":"K4-S9_inview","name_ru":"Серебряная поляна","name_en":"Silver Glade","coord":[892,907]},
+    {"id":"K4-S10_inview","name_ru":"Северная бухта","name_en":"North Cove","coord":[895,899]}
+  ],
+  "notes": "Viewport for K4 (center 900,900)."
+}

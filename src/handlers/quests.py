@@ -4,10 +4,12 @@ handlers/quests.py — обработчики квестов
 - Принятие/отказ от квеста
 - Уведомления при входе на локацию с квестами
 """
+import asyncio
 import logging
 import random
 import time
 from datetime import datetime
+import datetime as datetime_module
 from typing import Optional
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import CommandHandler, CallbackQueryHandler, ContextTypes
@@ -170,6 +172,95 @@ async def decline_quest_callback(update, context):
 QUEST_OFFER_COOLDOWN = 300  # 5 minutes between quest offers
 QUEST_LOCATION_COOLDOWN = 180  # 3 minutes before offering quest on same location
 
+
+async def offer_quest(bot, player, quest_type, location=None):
+    """Предложить квест игроку - создаёт и отправляет уведомление"""
+    from data.quests import generate_quest
+    from data.quest_config import MAX_TOTAL_ACTIVE_QUESTS
+    from game.quests import get_quest_slots_available, can_offer_new_quests
+    
+    player_lang = player.lang or "ru"
+    
+    if not await can_offer_new_quests(player):
+        slots = await get_quest_slots_available(player)
+        if slots <= 0:
+            await bot.send_message(
+                chat_id=player.uid,
+                text=f"🎯 *Квесты недоступны*\n\nУ тебя уже {MAX_TOTAL_ACTIVE_QUESTS} активных квестов. Заверши хотя бы один, чтобы получить новый!",
+                parse_mode="Markdown"
+            )
+        return None
+    
+    quest_data = generate_quest(player, quest_type, location, player_lang)
+    if not quest_data:
+        return None
+    
+    quest = await PlayerQuest.objects.create(
+        player_uid=player.uid,
+        quest_id=0,
+        quest_id_str="",
+        location_name="",
+        location_x=0,
+        location_y=0,
+        quest_key=quest_data["quest_key"],
+        quest_type=quest_data["quest_type"],
+        category=quest_data["category"],
+        title=quest_data["title"],
+        description=quest_data["description"],
+        location_id=quest_data.get("location_id", ""),
+        target_type=quest_data.get("target_type", ""),
+        target_id=quest_data.get("target_id", ""),
+        target_count=quest_data["target_count"],
+        progress=0,
+        reward_xp=quest_data["reward_xp"],
+        reward_gold=quest_data.get("reward_gold", 0),
+        reward_item=quest_data.get("reward_item", ""),
+        status="offered",
+        expires_at=quest_data.get("expires_at", 0),
+        created_at=int(time.time()),
+    )
+    
+    auto_mode = player.auto_accept_quests or "off"
+    
+    if auto_mode != "off":
+        from handlers.quests import schedule_auto_accept
+        await schedule_auto_accept(player.uid, quest.quest_key, auto_mode, bot)
+        
+        if auto_mode == "notify":
+            text = f"🎯 *{quest.title}*\n\nПринятие через 1 сек..."
+        elif auto_mode == "silent":
+            text = f"🎯 *{quest.title}*\n\nПринятие через 1 сек..."
+            await bot.send_message(
+                chat_id=player.uid,
+                text=text,
+                parse_mode="Markdown"
+            )
+        return quest
+    else:
+        keyboard = InlineKeyboardMarkup([
+            [
+                InlineKeyboardButton("✅ Принять", callback_data=f"quest_accept_{quest.quest_key}"),
+                InlineKeyboardButton("❌ Отказаться", callback_data=f"quest_decline_{quest.quest_key}"),
+            ]
+        ])
+        
+        text = (
+            f"🎯 *Новый квест!*\n\n"
+            f"*{quest.title}*\n\n"
+            f"{quest.description}\n\n"
+            f"🎁 Награда: +{quest.reward_xp} XP, +{quest.reward_gold} Gold"
+        )
+        
+        await bot.send_message(
+            chat_id=player.uid,
+            text=text,
+            parse_mode="Markdown",
+            reply_markup=keyboard
+        )
+    
+    return quest
+
+
 async def check_location_quests(bot, player):
     """Проверить квесты при входе на локацию (новая система)."""
     if not player:
@@ -253,50 +344,55 @@ async def update_quest_progress(player, quest_type: str, amount: int = 1):
                 if quest.location_locked:
                     quest.location_locked = False
                     quest.target_location_id = ""
-                
-                await quest.update(_columns=["progress", "status", "completed_at", "location_locked", "target_location_id"])
-
-                player.nextxp -= quest.reward_xp
-                player.gold += quest.reward_gold
-                player.totalquests += 1
-                await player.update(_columns=["nextxp", "gold", "totalquests"])
+                    await quest.update()
+                    await query.message.edit_text(
+                        f"❌ Квест *{quest.title}* отменён\n\n⏱️ Доступен через 10 мин.",
+                        parse_mode="Markdown"
+                    )
     except Exception:
         pass
 
 
-def register_handlers(app):
-    """Регистрация обработчиков."""
-    app.add_handler(CommandHandler("myquests", cmd_myquests))
-    app.add_handler(CallbackQueryHandler(accept_quest_callback, pattern="^quest_accept_"))
-    app.add_handler(CallbackQueryHandler(decline_quest_callback, pattern="^quest_decline_"))
-    app.add_handler(CallbackQueryHandler(accept_quest_callback_new, pattern="^quest_accept_"))
-    app.add_handler(CallbackQueryHandler(decline_quest_callback_new, pattern="^quest_decline_"))
-    app.add_handler(CallbackQueryHandler(abandon_quest_callback, pattern="^quest_abandon_"))
-    app.add_handler(CallbackQueryHandler(callback_quest_detail, pattern="^quest_detail_"))
-
-
 # ═══════════════════════════════════════════════════════════════
-# OFFER QUEST - Предложение квеста игроку
+# AUTO ACCEPT QUEST SCHEDULER
 # ═══════════════════════════════════════════════════════════════
 
-async def offer_quest(bot, player, quest_type, location=None):
-    """Предложить квест игроку - создаёт и отправляет уведомление"""
-    import time
-    from data.quests import generate_quest
-    from data.quest_config import MAX_TOTAL_ACTIVE_QUESTS
-    from game.quests import get_quest_slots_available, can_offer_new_quests
+async def schedule_auto_accept(player_uid: int, quest_key: str, mode: str, bot):
+    """Авто-принятие квеста через 1 секунду"""
+    await asyncio.sleep(1)
     
-    player_lang = player.lang or "ru"
+    player = await Player.objects.get_or_none(uid=player_uid)
+    if not player:
+        return
     
-    if not await can_offer_new_quests(player):
-        slots = await get_quest_slots_available(player)
-        if slots <= 0:
-            await bot.send_message(
-                chat_id=player.uid,
-                text=f"🎯 *Квесты недоступны*\n\nУ тебя уже {MAX_TOTAL_ACTIVE_QUESTS} активных квестов. Заверши хотя бы один, чтобы получить новый!",
-                parse_mode="Markdown"
-            )
-        return None
+    quest = await PlayerQuest.objects.get_or_none(quest_key=quest_key, player_uid=player_uid)
+    if not quest or quest.status != "offered":
+        return
+    
+    quest.status = "active"
+    quest.accepted_at = int(time.time())
+    quest.expires_at = quest.expires_at or (int(time.time()) + 86400)
+    await quest.update()
+    
+    player.onquest = True
+    await player.update(_columns=["onquest"])
+    
+    if mode == "notify":
+        from data.quest_config import calculate_rewards
+        from i18n import t
+        from bot import send_to_players
+        
+        xp, gold = calculate_rewards(quest.quest_type, player.level)
+        lang = player.lang or "ru"
+        
+        text = f"✅ {t(lang, 'quest_accepted')} {quest.title}\n\n🎁 XP: +{xp} 💰 +{gold}"
+        await send_to_players(bot, text, player_uids=[player_uid], parse_mode="Markdown")
+    elif mode == "silent":
+        await bot.send_message(
+            chat_id=player_uid,
+            text=f"🎯 {quest.title} — принят",
+            parse_mode="Markdown"
+        )
     
     quest_data = generate_quest(player, quest_type, location, player_lang)
     if not quest_data:
@@ -328,28 +424,43 @@ async def offer_quest(bot, player, quest_type, location=None):
         created_at=int(time.time()),
     )
     
-    # Кнопки принятия/отказа
-    keyboard = InlineKeyboardMarkup([
-        [
-            InlineKeyboardButton("✅ Принять", callback_data=f"quest_accept_{quest.quest_key}"),
-            InlineKeyboardButton("❌ Отказаться", callback_data=f"quest_decline_{quest.quest_key}"),
-        ]
-    ])
+    auto_mode = player.auto_accept_quests or "off"
     
-    # Текст уведомления
-    text = (
-        f"🎯 *Новый квест!*\n\n"
-        f"*{quest.title}*\n\n"
-        f"{quest.description}\n\n"
-        f"🎁 Награда: +{quest.reward_xp} XP, +{quest.reward_gold} Gold"
-    )
-    
-    await bot.send_message(
-        chat_id=player.uid,
-        text=text,
-        parse_mode="Markdown",
-        reply_markup=keyboard
-    )
+    if auto_mode != "off":
+        from handlers.quests import schedule_auto_accept
+        await schedule_auto_accept(player.uid, quest.quest_key, auto_mode, bot)
+        
+        if auto_mode == "notify":
+            text = f"🎯 *{quest.title}*\n\nПринятие через 1 сек..."
+        elif auto_mode == "silent":
+            text = f"🎯 *{quest.title}*\n\nПринятие через 1 сек..."
+            await bot.send_message(
+                chat_id=player.uid,
+                text=text,
+                parse_mode="Markdown"
+            )
+        return quest
+    else:
+        keyboard = InlineKeyboardMarkup([
+            [
+                InlineKeyboardButton("✅ Принять", callback_data=f"quest_accept_{quest.quest_key}"),
+                InlineKeyboardButton("❌ Отказаться", callback_data=f"quest_decline_{quest.quest_key}"),
+            ]
+        ])
+        
+        text = (
+            f"🎯 *Новый квест!*\n\n"
+            f"*{quest.title}*\n\n"
+            f"{quest.description}\n\n"
+            f"🎁 Награда: +{quest.reward_xp} XP, +{quest.reward_gold} Gold"
+        )
+        
+        await bot.send_message(
+            chat_id=player.uid,
+            text=text,
+            parse_mode="Markdown",
+            reply_markup=keyboard
+        )
     
     return quest
 
@@ -621,3 +732,15 @@ async def abandon_quest_callback(update, context):
     await quest.update()
 
     await query.message.edit_text("🚫 Квест отменён\n\n⏱️ 10 минут кулдаун")
+
+
+def register_handlers(app):
+    """Регистрация обработчиков квестов."""
+    from telegram.ext import CommandHandler, CallbackQueryHandler
+    app.add_handler(CommandHandler("myquests", cmd_myquests))
+    app.add_handler(CommandHandler("quests", cmd_myquests))
+    app.add_handler(CallbackQueryHandler(accept_quest_callback, pattern="^quest_accept_"))
+    app.add_handler(CallbackQueryHandler(accept_quest_callback_new, pattern="^quest_accept_new_"))
+    app.add_handler(CallbackQueryHandler(decline_quest_callback, pattern="^quest_decline_"))
+    app.add_handler(CallbackQueryHandler(abandon_quest_callback, pattern="^quest_abandon_"))
+    logging.info("Quest handlers registered")

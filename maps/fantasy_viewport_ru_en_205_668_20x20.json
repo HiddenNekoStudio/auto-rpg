@@ -1,0 +1,19 @@
+{
+  "viewport_center": [205, 668],
+  "viewport_size": [20, 20],
+  "viewport_bounds": [195, 214, 658, 677],
+  "map_size": [1000, 1000],
+  "kingdoms_in_view": [],
+  "players_in_view": [
+    {"id": "P1", "label_ru": "Вы", "label_en": "You", "coord": [205, 668], "avatar_url": null},
+    {"id": "P2", "label_ru": "Игрок2", "label_en": "Player2", "coord": [199, 666], "avatar_url": null},
+    {"id": "P3", "label_ru": "Игрок3", "label_en": "Player3", "coord": [210, 677], "avatar_url": null}
+  ],
+  "cities_in_view": [
+    {"kingdom_id":"K1","city_id":"K1-C1_inview","name_ru":"Светоград","name_en":"Lightguard","coord":[200,660],"avatar_url":null},
+    {"kingdom_id":"K1","city_id":"K1-C2_inview","name_ru":"Рассветоград","name_en":"Dawnhold","coord":[210,670],"avatar_url":null},
+    {"kingdom_id":"K1","city_id":"K1-C3_inview","name_ru":"Заречье","name_en":"Eastshore","coord":[205,675],"avatar_url":null}
+  ],
+  "suburbs_in_view": [],
+  "notes": "Viewport centered on player with two other markers."
+}

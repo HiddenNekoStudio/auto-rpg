@@ -1,0 +1,33 @@
+{
+  "viewport_center": [100, 900],
+  "viewport_size": [20, 20],
+  "viewport_bounds": [90, 109, 890, 909],
+  "map_size": [1000, 1000],
+  "kingdoms_in_view": ["K3"],
+  "players_in_view": [ {"id": "P1", "label_ru": "Вы", "label_en": "You", "coord": [100, 900], "avatar_url": null} ],
+  "cities_in_view": [
+    {"kingdom_id":"K3","city_id":"K3-C1_inview","name_ru":"Тенеград","name_en":"Nightgrad","coord":[95,895],"avatar_url":null},
+    {"kingdom_id":"K3","city_id":"K3-C2_inview","name_ru":"Тени Холм","name_en":"Noctis Hill","coord":[105,900],"avatar_url":null},
+    {"kingdom_id":"K3","city_id":"K3-C3_inview","name_ru":"Лабиринт Тумана","name_en":"Fogweave","coord":[100,910],"avatar_url":null},
+    {"kingdom_id":"K3","city_id":"K3-C4_inview","name_ru":"Углеродный Берег","name_en":"Darkshore","coord":[90,905],"avatar_url":null},
+    {"kingdom_id":"K3","city_id":"K3-C5_inview","name_ru":"Тьмоград","name_en":"Nightshade","coord":[109,900],"avatar_url":null},
+    {"kingdom_id":"K3","city_id":"K3-C6_inview","name_ru":"Сумрак","name_en":"Dusk","coord":[100,890],"avatar_url":null},
+    {"kingdom_id":"K3","city_id":"K3-C7_inview","name_ru":"Сумеречный Холд","name_en":"Twilight Hold","coord":[98,905],"avatar_url":null},
+    {"kingdom_id":"K3","city_id":"K3-C8_inview","name_ru":"Тусклый Берег","name_en":"Dimshore","coord":[102,908],"avatar_url":null},
+    {"kingdom_id":"K3","city_id":"K3-C9_inview","name_ru":"Пепельный Холм","name_en":"Ashen Hill","coord":[96,892],"avatar_url":null},
+    {"kingdom_id":"K3","city_id":"K3-C10_inview","name_ru":"Забытое Гнездо","name_en":"Forgotten Nest","coord":[107,899],"avatar_url":null}
+  ],
+  "suburbs_in_view": [
+    {"id":"K3-S1_inview","name_ru":"Темный лес","name_en":"Dark Forest","coord":[90,892]},
+    {"id":"K3-S2_inview","name_ru":"Блуждающий поток","name_en":"Wandering Stream","coord":[92,895]},
+    {"id":"K3-S3_inview","name_ru":"Скалистый брод","name_en":"Stoneford","coord":[99,898]},
+    {"id":"K3-S4_inview","name_ru":"Долина тумана","name_en":"Mist Vale","coord":[101,901]},
+    {"id":"K3-S5_inview","name_ru":"Серебрянная поляна","name_en":"Silver Glade","coord":[105,895]},
+    {"id":"K3-S6_inview","name_ru":"Холодная роща","name_en":"Cold Grove","coord":[95,903]},
+    {"id":"K3-S7_inview","name_ru":"Каменная тропа","name_en":"Stone Path","coord":[97,908]},
+    {"id":"K3-S8_inview","name_ru":"Песчаный овраг","name_en":"Sandy Ravine","coord":[90,902]},
+    {"id":"K3-S9_inview","name_ru":"Сумеречная лощина","name_en":"Twilight Glade","coord":[99,900]},
+    {"id":"K3-S10_inview","name_ru":"Ледяной ключ","name_en":"Ice Spring","coord":[93,909]}
+  ],
+  "notes": "Viewport for K3 (center 100,900)."
+}

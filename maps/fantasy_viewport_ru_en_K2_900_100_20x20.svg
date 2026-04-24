@@ -1,0 +1,22 @@
+<svg width="400" height="400" viewBox="0 0 20 20" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="bg" x1="0" x2="1" y1="0" y2="1">
+      <stop offset="0%" stop-color="#f7f3e9"/>
+      <stop offset="100%" stop-color="#eae2d5"/>
+    </linearGradient>
+  </defs>
+  <rect width="20" height="20" fill="url(#bg)"/>
+  <circle cx="10" cy="10" r="0.8" fill="#e74c3c" />
+  <text x="10" y="11.5" font-family="monospace" font-size="0.6" text-anchor="middle" fill="#000">Вы / You</text>
+  <!-- Suburbs in viewport markers converted to viewport coordinates -->
+  <circle cx="1" cy="2" r="0.4" fill="#2c3e50" />
+  <text x="1.6" y="2.6" font-family="monospace" font-size="0.6" fill="#000">Coast Cove</text>
+  <circle cx="2" cy="6" r="0.4" fill="#2c3e50" />
+  <text x="2.6" y="6.6" font-family="monospace" font-size="0.6" fill="#000">Green Hills</text>
+  <circle cx="5" cy="10" r="0.4" fill="#2c3e50" />
+  <text x="5.6" y="10.6" font-family="monospace" font-size="0.6" fill="#000">Quiet Creek</text>
+  <circle cx="9" cy="15" r="0.4" fill="#2c3e50" />
+  <text x="9.6" y="15.6" font-family="monospace" font-size="0.6" fill="#000">Forest Strip</text>
+  <circle cx="8" cy="7" r="0.4" fill="#2c3e50" />
+  <text x="8.6" y="7.6" font-family="monospace" font-size="0.6" fill="#000">Wind Slope</text>
+</svg>

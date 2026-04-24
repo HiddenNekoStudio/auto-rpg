@@ -161,6 +161,7 @@ class Player(ormar.Model):
     onquest: bool = ormar.Boolean(default=False)
     qid: int = ormar.Integer(default=0)
     optin: bool = ormar.Boolean(default=False)
+    auto_accept_quests: str = ormar.String(max_length=10, default="off")
     lang: str = ormar.String(max_length=5, default="")
     race: str = ormar.String(max_length=20, default="")
     state: str = ormar.String(max_length=20, default="peaceful")

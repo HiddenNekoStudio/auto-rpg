@@ -83,6 +83,15 @@ STRINGS = {
         "notif_on_txt":     "✅ *включены*",
         "notif_off_txt":    "❌ *выключены*",
         "btn_toggle":       "🔄 Переключить",
+        
+        # Авто-квесты
+        "btn_autoquest":     "🔄 Авто-квесты",
+        "autoquest_title":  "⚙️ *Авто-приём квестов*\n\nВыбери режим:",
+        "autoquest_off":     "🔴 Выкл",
+        "autoquest_silent":  "🔕 Тихий",
+        "autoquest_notify": "🔔 С уведомлением",
+        "profile_autoquest": "Авто-квесты: {icon} {mode}",
+        "quest_accepted":   "✅ Квест принят!",
 
         # Квест
         "quest_none":       "🗺️ Сейчас нет активных квестов.",
@@ -221,6 +230,15 @@ STRINGS = {
         "notif_on_txt":     "✅ *enabled*",
         "notif_off_txt":    "❌ *disabled*",
         "btn_toggle":       "🔄 Toggle",
+
+        # Auto-quests
+        "btn_autoquest":     "🔄 Auto-Quests",
+        "autoquest_title":  "⚙️ *Auto-accept quests*\n\nSelect mode:",
+        "autoquest_off":    "🔴 Off",
+        "autoquest_silent": "🔕 Silent",
+        "autoquest_notify": "🔔 With notify",
+        "profile_autoquest": "Auto-quests: {icon} {mode}",
+        "quest_accepted":  "✅ Quest accepted!",
 
         # Quest
         "quest_none":       "🗺️ No active quests right now.",

@@ -129,10 +129,14 @@ THRESHOLD_ICONS = {
 }
 
 
-async def send_quest_progress_notification(player: Player, quest: PlayerQuest, new_pct: int):
+async def send_quest_progress_notification(player: Player, quest: PlayerQuest, new_pct: int, bot=None):
     """Отправляет уведомление о прогрессе квеста при пороге 25%/50%/75%"""
+    from bot import get_bot
+    bot_instance = bot or get_bot()
+    if bot_instance is None:
+        return
     try:
-        from telegram import Bot
+        from bot import send_to_players
         
         icon = THRESHOLD_ICONS.get(new_pct, "⚪")
         lang = player.lang or "ru"
@@ -148,12 +152,7 @@ async def send_quest_progress_notification(player: Player, quest: PlayerQuest, n
                 f"Прогресс: {quest.progress}/{quest.target_count} ({new_pct}%)"
             )
         
-        bot = Bot.get_current()
-        await bot.send_message(
-            chat_id=player.uid,
-            text=text,
-            parse_mode="Markdown"
-        )
+        await send_to_players(bot_instance, text, player_uids=[player.uid], parse_mode="Markdown")
     except Exception as e:
         logging.error(f"Quest progress notification error: {e}")
 
@@ -322,7 +321,7 @@ async def on_rare_drop(player: Player, rarity: str):
 # QUEST COMPLETION
 # ═══════════════════════════════════════════════════════════════
 
-async def complete_quest(player: Player, quest: PlayerQuest):
+async def complete_quest(player: Player, quest: PlayerQuest, bot=None):
     """Успешное выполнение квеста"""
     
     xp, gold = calculate_rewards(quest.quest_type, player.level)
@@ -336,23 +335,23 @@ async def complete_quest(player: Player, quest: PlayerQuest):
     
     player.totalxp += xp
     player.gold += gold
+    await player.update(_columns=["totalxp", "gold"])
     
     quest.status = "completed"
     quest.completed_at = int(time.time())
     await quest.update()
     
-    from bot import ctime
-    from telegram import Bot
+    from bot import get_bot
+    bot_instance = bot or get_bot()
+    if bot_instance is None:
+        return
+    
+    from bot import send_to_players
     
     text = f"✅ *Квест выполнен!*\n\n*{quest.title}*\n\n🎁 Награда:\n• XP: +{xp}\n• Золото: +{gold}"
     
     try:
-        bot = Bot.get_current()
-        await bot.send_message(
-            chat_id=player.uid,
-            text=text,
-            parse_mode="Markdown"
-        )
+        await send_to_players(bot_instance, text, player_uids=[player.uid], parse_mode="Markdown")
     except Exception as e:
         logging.error(f"Quest complete notification error: {e}")
 
@@ -361,7 +360,7 @@ async def complete_quest(player: Player, quest: PlayerQuest):
 # QUEST FAILURE (TIMEOUT)
 # ═══════════════════════════════════════════════════════════════
 
-async def fail_quest(player: Player, quest: PlayerQuest, apply_penalty: bool = True):
+async def fail_quest(player: Player, quest: PlayerQuest, apply_penalty: bool = True, bot=None):
     """Проваленный квест (истёк дедлайн)"""
     
     if apply_penalty:
@@ -372,22 +371,21 @@ async def fail_quest(player: Player, quest: PlayerQuest, apply_penalty: bool = T
         
         if quest.quest_type == "story":
             player.align = max(-1000, player.align - 1)
-            await player.update()
+        await player.update(_columns=["totalxp", "gold", "align"])
     
     quest.status = "failed"
     await quest.update()
     
-    # Уведомление
+    from bot import get_bot
+    bot_instance = bot or get_bot()
+    if bot_instance is None:
+        return
+    
+    from bot import send_to_players
     text = f"❌ *Квест провален!*\n\n*{quest.title}*\n\nИстёк срок выполнения."
     
     try:
-        from telegram import Bot
-        bot = Bot.get_current()
-        await bot.send_message(
-            chat_id=player.uid,
-            text=text,
-            parse_mode="Markdown"
-        )
+        await send_to_players(bot_instance, text, player_uids=[player.uid], parse_mode="Markdown")
     except Exception as e:
         logging.error(f"Quest fail notification error: {e}")
 

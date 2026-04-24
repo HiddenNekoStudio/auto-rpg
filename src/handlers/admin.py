@@ -873,10 +873,17 @@ async def cmd_admin_spawnboss(update: Update, context: ContextTypes.DEFAULT_TYPE
     if not player.online:
         await update.message.reply_text("Игрок не онлайн.")
         return
+    
+    from game.bosses import ensure_bosses_available
+    if not await ensure_bosses_available():
+        await update.message.reply_text("Нет доступных боссов (не удалось восстановить).")
+        return
+    
     bosses = await Boss.objects.filter(defeated=False).all()
     if not bosses:
-        await update.message.reply_text("Нет доступных боссов (все побеждены).")
+        await update.message.reply_text("Нет доступных боссов.")
         return
+    
     boss = bosses[0]
     await send_to_players(update.get_bot(),
         f"👹 *{boss.title}* появился поблизости!\n"

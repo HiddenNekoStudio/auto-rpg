@@ -1,0 +1,32 @@
+{
+  "viewport_center": [500, 500],
+  "viewport_size": [20, 20],
+  "viewport_bounds": [490, 509, 490, 509],
+  "map_size": [1000, 1000],
+  "kingdoms_in_view": ["K5"],
+  "cities_in_view": [
+    {"kingdom_id":"K5","city_id":"K5-C1_inview","name_ru":"Хрустальный Пик","name_en":"Crystal Peak","coord":[492,492]},
+    {"kingdom_id":"K5","city_id":"K5-C2_inview","name_ru":"Хрустальная Долина","name_en":"Crystal Valley","coord":[500,500]},
+    {"kingdom_id":"K5","city_id":"K5-C3_inview","name_ru":"Алмазная Гора","name_en":"Diamond Summit","coord":[509,509]},
+    {"kingdom_id":"K5","city_id":"K5-C4_inview","name_ru":"Кристальная Гора","name_en":"Crystalline Ridge","coord":[500,490]},
+    {"kingdom_id":"K5","city_id":"K5-C5_inview","name_ru":"Пик Ветра","name_en":"Wind Peak","coord":[498,498]},
+    {"kingdom_id":"K5","city_id":"K5-C6_inview","name_ru":"Сияющие Вершины","name_en":"Shimmering Heights","coord":[505,505]},
+    {"kingdom_id":"K5","city_id":"K5-C7_inview","name_ru":"Ледяной Кромка","name_en":"Ice Edge","coord":[495,505]},
+    {"kingdom_id":"K5","city_id":"K5-C8_inview","name_ru":"Архив Хрусталя","name_en":"Crystal Archive","coord":[500,515]},
+    {"kingdom_id":"K5","city_id":"K5-C9_inview","name_ru":"Град Кварца","name_en":"Quartz City","coord":[508,492]},
+    {"kingdom_id":"K5","city_id":"K5-C10_inview","name_ru":"Сверкающий Спуск","name_en":"Glimmer Descent","coord":[492,508]}
+  ],
+  "suburbs_in_view": [
+    {"id":"K5-S1_inview","name_ru":"Лазурный склон","name_en":"Azure Slope","coord":[492,492]},
+    {"id":"K5-S2_inview","name_ru":"Изумрудный дол","name_en":"Emerald Dell","coord":[493,496]},
+    {"id":"K5-S3_inview","name_ru":"Хрустальная поляна","name_en":"Crystal Glade","coord":[500,498]},
+    {"id":"K5-S4_inview","name_ru":"Сияние рощи","name_en":"Gleam Grove","coord":[505,500]},
+    {"id":"K5-S5_inview","name_ru":"Снежный берег","name_en":"Snowshore","coord":[498,502]},
+    {"id":"K5-S6_inview","name_ru":"Предел ветра","name_en":"Wind Apex","coord":[499,491]},
+    {"id":"K5-S7_inview","name_ru":"Кварцевая долина","name_en":"Quartz Valley","coord":[504,509]},
+    {"id":"K5-S8_inview","name_ru":"Пламенный склон","name_en":"Flame Slope","coord":[510,505]},
+    {"id":"K5-S9_inview","name_ru":"Холодная нива","name_en":"Chill Field","coord":[492,505]},
+    {"id":"K5-S10_inview","name_ru":"Ледяной ручей","name_en":"Ice Creek","coord":[496,509]}
+  ],
+  "notes": "Viewport for K5 (center 500,500)."
+}

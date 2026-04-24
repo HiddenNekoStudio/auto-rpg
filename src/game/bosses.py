@@ -20,7 +20,7 @@ BOSSES_FILE = Path(__file__).parent.parent / "data" / "bosses.json"
 
 BOSS_RADIUS_AUTO = 10
 BOSS_RADIUS_CHOICE = 100
-BOSS_RESPAWN_DAYS = 4
+BOSS_RESPAWN_DAYS = 1
 BOSS_XP_BONUS = 2.0
 BOSS_PENALTY_MULT = 3.0
 
@@ -154,7 +154,7 @@ def _ensure_boss_columns_sync() -> None:
 
 
 async def init_bosses() -> None:
-    """Инициализировать боссов в БД."""
+    """Инициализировать боссов в БД. Автовосстановление при пустой таблице."""
     import logging
     from sqlalchemy import text
     from db import engine
@@ -188,6 +188,60 @@ async def init_bosses() -> None:
         logging.info(f"Boss system initialized: {len(boss_data)} bosses")
     finally:
         conn.close()
+
+
+async def ensure_bosses_available() -> bool:
+    """
+    Проверить доступность боссов и автовосстановить при необходимости.
+    Вызывается перед спавном босса в админке.
+    Возвращает True если боссы доступны.
+    """
+    import logging
+    
+    try:
+        bosses = await Boss.objects.filter(defeated=False).all()
+        if bosses:
+            return True
+        
+        logging.info("All bosses defeated, restoring from bosses.json...")
+        boss_data = _load_bosses()
+        if not boss_data:
+            logging.warning("No boss data found in bosses.json")
+            return False
+        
+        restored_count = 0
+        for boss_id, b in boss_data.items():
+            try:
+                existing = await Boss.objects.get_or_none(boss_id=boss_id)
+                if existing:
+                    existing.defeated = False
+                    existing.defeated_at = 0
+                    existing.defeated_by = 0
+                    await existing.update(_columns=["defeated", "defeated_at", "defeated_by"])
+                else:
+                    new_boss = Boss(
+                        boss_id=boss_id,
+                        title=b.get("title", ""),
+                        location_name=b.get("location_name", ""),
+                        x=b.get("x", 0),
+                        y=b.get("y", 0),
+                        level=b.get("level", 1),
+                        equipment=b.get("equipment", {}),
+                        defeated=False,
+                        respawn_cost=b.get("respawn_cost", 50),
+                        difficulty=b.get("difficulty", "medium"),
+                        legendary_counter=0,
+                    )
+                    await new_boss.save()
+                restored_count += 1
+            except Exception as restore_err:
+                logging.warning(f"Failed to restore boss {boss_id}: {restore_err}")
+        
+        logging.info(f"Restored {restored_count} bosses from bosses.json")
+        return restored_count > 0
+    except Exception as e:
+        logging.warning(f"Boss availability check failed: {e}")
+        return False
 
 
 async def get_boss_at(x: int, y: int) -> Optional[tuple]:

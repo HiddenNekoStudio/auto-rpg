@@ -224,18 +224,10 @@ async def _profile_text_async(player) -> str:
         player_uid=player.uid,
         status="active"
     ).count()
-    offered_quests = await PlayerQuest.objects.filter(
+    completed_quests = await PlayerQuest.objects.filter(
         player_uid=player.uid,
-        status="offered"
+        status="completed"
     ).count()
-    
-    quest_info = ""
-    if active_quests > 0:
-        quest_info = f" | 🎯 {active_quests}кв"
-    if offered_quests > 0:
-        quest_info += f" | 📩 {offered_quests}нов"
-    if quest_info:
-        quest_info += " (/myquests)"
     
     duel_str  = (t(lang, "profile_duels", wins=player.wins, loss=player.loss) + "\n") if cfg.ENABLE_COMBAT else ""
     race_str = _race_display(player)
@@ -261,13 +253,20 @@ async def _profile_text_async(player) -> str:
     else:
         text += f"📍 Позиция: ({player.x}, {player.y})\n"
 
-    # Новый формат: квест и уведомления на разных строках
-    quest_status = f"🎯 Квест: {active_quests}"
+    quest_status = f"🎯 Квест: {active_quests} | 📩 завершено: {completed_quests}"
     alert_icon = "🔔" if player.optin else "🔕"
     alert_status = "ВКЛ" if player.optin else "ВЫКЛ"
 
     text += quest_status + "\n"
-    text += f"Уведомления: {alert_icon} {alert_status}\n\n"
+    text += "━━━━━━━━━━━━━━━━━━\n"
+    text += f"Уведомления: {alert_icon} {alert_status}\n"
+    autoquest_mode = player.auto_accept_quests or "off"
+    autoquest_icons = {"off": "🔴", "silent": "🔕", "notify": "🔔"}
+    autoquest_names = {"off": "Выкл", "silent": "Тихий", "notify": "С уведомлением"}
+    autoquest_icon = autoquest_icons.get(autoquest_mode, "🔴")
+    autoquest_name = autoquest_names.get(autoquest_mode, "Выкл")
+    text += f"Авто-квесты: {autoquest_icon} {autoquest_name}\n"
+    text += "━━━━━━━━━━━━━━━━━━\n"
     text += t(lang, "profile_gear") + "\n"
     for slot in cfg.WEAPON_SLOTS:
         item = getattr(player, slot)
@@ -308,13 +307,21 @@ def _profile_text_sync(player) -> str:
     else:
         text += f"📍 Позиция: ({player.x}, {player.y})\n"
 
-    # Новый формат: квест и уведомления на разных строках
-    quest_status = f"🎯 Квест: {active_quests}"
-    alert_icon = "🔔" if player.optin else "🔕"
-    alert_status = "ВКЛ" if player.optin else "ВЫКЛ"
+    # Новый формат: квест и уведомления
+    quest_status = f"🎯 Квест: 0 | 📩 завершено: 0"
+    alert_icon = "🔕"
+    alert_status = "ВЫКЛ"
 
     text += quest_status + "\n"
-    text += f"Уведомления: {alert_icon} {alert_status}\n\n"
+    text += "━━━━━━━━━━━━━━━━━━\n"
+    text += f"Уведомления: {alert_icon} {alert_status}\n"
+    autoquest_mode = player.auto_accept_quests or "off"
+    autoquest_icons = {"off": "🔴", "silent": "🔕", "notify": "🔔"}
+    autoquest_names = {"off": "Выкл", "silent": "Тихий", "notify": "С уведомлением"}
+    autoquest_icon = autoquest_icons.get(autoquest_mode, "🔴")
+    autoquest_name = autoquest_names.get(autoquest_mode, "Выкл")
+    text += f"Авто-квесты: {autoquest_icon} {autoquest_name}\n"
+    text += "━━━━━━━━━━━━━━━━━━\n"
     text += t(lang, "profile_gear") + "\n"
     for slot in cfg.WEAPON_SLOTS:
         item = getattr(player, slot)
@@ -422,9 +429,17 @@ async def callback_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
             return
         alert_icon  = "🔔" if player.optin else "🔕"
         alert_label = f"{alert_icon} {t(lang, 'btn_notif')}"
+        
+        autoquest_icons = {"off": "🔴", "silent": "🔕", "notify": "🔔"}
+        autoquest_icon = autoquest_icons.get(player.auto_accept_quests or "off", "🔴")
+        autoquest_label = f"{autoquest_icon} {t(lang, 'btn_autoquest')}"
+        
         keyboard = InlineKeyboardMarkup([
             [
-                InlineKeyboardButton(alert_label,         callback_data="menu_alert_settings"),
+                InlineKeyboardButton(alert_label,    callback_data="menu_alert_settings"),
+                InlineKeyboardButton(autoquest_label, callback_data="menu_autoquest"),
+            ],
+            [
                 InlineKeyboardButton(t(lang, "btn_lang"), callback_data="menu_lang"),
             ],
             [InlineKeyboardButton(t(lang, "menu"), callback_data="menu_back")],
@@ -448,6 +463,76 @@ async def callback_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
             InlineKeyboardButton(t(lang, "back"),       callback_data=back_cb),
         ]])
         await safe_edit(query, t(lang, "notif_status", status=status_str),
+                        parse_mode="Markdown", reply_markup=keyboard)
+
+    elif action == "menu_autoquest":
+        if not player:
+            await query.answer("Ты не зарегистрирован! Используй /start", show_alert=True)
+            return
+        
+        current = player.auto_accept_quests or "off"
+        
+        opts = [
+            ("off", "autoquest_off"),
+            ("silent", "autoquest_silent"),
+            ("notify", "autoquest_notify")
+        ]
+        
+        keyboard_buttons = []
+        for val, label_key in opts:
+            label = t(lang, label_key)
+            if val == current:
+                label = f"✅ {label}"
+            keyboard_buttons.append(InlineKeyboardButton(
+                label,
+                callback_data=f"autoquest_set_{val}"
+            ))
+        
+        keyboard = InlineKeyboardMarkup([
+            keyboard_buttons,
+            [InlineKeyboardButton(t(lang, "back"), callback_data="menu_settings")]
+        ])
+        await safe_edit(query, t(lang, "autoquest_title"),
+                        parse_mode="Markdown", reply_markup=keyboard)
+
+    elif action.startswith("autoquest_set_"):
+        if not player:
+            await query.answer("Ты не зарегистрирован! Используй /start", show_alert=True)
+            return
+        
+        new_mode = action.replace("autoquest_set_", "")
+        
+        # Сохраняем выбранный режим
+        player.auto_accept_quests = new_mode
+        await player.update()
+        
+        # Подтверждение
+        mode_icons = {"off": "🔴", "silent": "🔕", "notify": "🔔"}
+        mode_names = {"off": "Выкл", "silent": "Тихий", "notify": "С уведомлением"}
+        await query.answer(f"✅ Авто-квесты {mode_icons.get(new_mode, '')} {mode_names.get(new_mode, '')} — ВКЛ", show_alert=True)
+        
+        # Показываем меню с галочкой на выбранном
+        opts = [
+            ("off", "autoquest_off"),
+            ("silent", "autoquest_silent"),
+            ("notify", "autoquest_notify")
+        ]
+        
+        keyboard_buttons = []
+        for val, label_key in opts:
+            label = t(lang, label_key)
+            if val == new_mode:
+                label = f"✅ {label}"
+            keyboard_buttons.append(InlineKeyboardButton(
+                label,
+                callback_data=f"autoquest_set_{val}"
+            ))
+        
+        keyboard = InlineKeyboardMarkup([
+            keyboard_buttons,
+            [InlineKeyboardButton(t(lang, "back"), callback_data="menu_settings")]
+        ])
+        await safe_edit(query, t(lang, "autoquest_title"),
                         parse_mode="Markdown", reply_markup=keyboard)
 
     elif action in ("menu_top", "menu_top_combined"):
@@ -707,4 +792,5 @@ def register(app: Application):
     app.add_handler(CallbackQueryHandler(callback_set_lang, pattern="^set_lang_"))
     app.add_handler(CallbackQueryHandler(callback_set_race, pattern="^set_race_"))
     app.add_handler(CallbackQueryHandler(callback_menu,     pattern="^menu_"))
+    app.add_handler(CallbackQueryHandler(callback_menu,     pattern="^autoquest_set_"))
     app.add_handler(CallbackQueryHandler(callback_pull,     pattern="^pull_\\d+$"))
