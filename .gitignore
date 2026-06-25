@@ -1,6 +1,8 @@
 # Environment variables
 .env
 config.yaml
+AGENTS.md
+CLAUDE.md
 
 # Python
 __pycache__/
@@ -13,9 +15,11 @@ __pycache__/
 *.sqlite3
 
 # Data directory (if you want to keep db out of repo)
-data/
+graphify-out/
+src/graphify-out
 
 # Docker
 data/
 # .env already covered
 .gitnexus
+.claude

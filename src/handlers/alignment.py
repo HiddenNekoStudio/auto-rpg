@@ -72,10 +72,12 @@ async def callback_align(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await safe_edit(query, t(lang, "not_registered"))
         return
     choice = int(query.data.split("_")[1])
-    match choice:
-        case 1: align_name = t(lang, "align_good")
-        case 2: align_name = t(lang, "align_evil")
-        case _: align_name = t(lang, "align_neutral")
+    if choice == 1:
+        align_name = t(lang, "align_good")
+    elif choice == 2:
+        align_name = t(lang, "align_evil")
+    else:
+        align_name = t(lang, "align_neutral")
     keyboard = InlineKeyboardMarkup([[
         InlineKeyboardButton(t(lang, "menu"), callback_data="menu_back"),
     ]])

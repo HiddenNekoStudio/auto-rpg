@@ -7,11 +7,37 @@ services:
       - ./config.yaml:/etc/hysteria/config.yaml:ro
     command: ["client", "-c", "/etc/hysteria/config.yaml"]
     healthcheck:
-      test: ["CMD", "nc", "-z", "127.0.0.1", "8080"]
+      test: ["CMD-SHELL", "pgrep hysteria || exit 1"]
       interval: 30s
       timeout: 10s
       retries: 3
       start_period: 10s
+    networks:
+      - autorpg_net
+
+  postgres:
+    image: postgres:16-alpine
+    container_name: tg_autorpg_db
+    restart: unless-stopped
+    networks:
+      - autorpg_net
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    environment:
+      POSTGRES_DB: autorpg
+      POSTGRES_USER: autorpg
+      POSTGRES_PASSWORD: "${DBPASS:-autorpg_pass}"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U autorpg"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 5s
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
 
   autorpg:
     build: .
@@ -21,46 +47,73 @@ services:
     depends_on:
       vpn:
         condition: service_healthy
+      postgres:
+        condition: service_healthy
+    mem_limit: 512m
+    cpus: 0.5
 
     environment:
-      # Токен бота от @BotFather (обязательно)
       - TELEGRAM_TOKEN=${TELEGRAM_TOKEN:-placeholder}
-      # Admin IDs (получается у @userinfobot)
       - ADMIN_IDS=${ADMIN_IDS:-}
-      # Прокси через VPN контейнер
       - HTTP_PROXY=http://127.0.0.1:8080
       - HTTPS_PROXY=http://127.0.0.1:8080
       - ALL_PROXY=socks5://127.0.0.1:1080
       - http_proxy=http://127.0.0.1:8080
       - https_proxy=http://127.0.0.1:8080
-      # SOCKS5 прокси (опционально, формат: socks5://user:pass@host:port)
       - TELEGRAM_PROXY=${TELEGRAM_PROXY:-}
-      # Тип БД (sqlite+aiosqlite, mysql+aiomysql, postgresql+asyncpg)
-      - DBTYPE=${DBTYPE:-sqlite+aiosqlite}
-      # Путь к файлу БД внутри контейнера
-      - DB_PATH=/data/autorpg.db
-      # Настройки игры
+      - DBTYPE=postgresql+asyncpg
+      - DBUSER=autorpg
+      - "DBPASS=${DBPASS:-autorpg_pass}"  # ⚠️ Override via .env for production!
+      - DBHOST=postgres
+      - DBPORT=5432
+      - DBNAME=autorpg
       - OFFLINE_TIMEOUT=${OFFLINE_TIMEOUT:-3600}
       - GAME_INTERVAL=${GAME_INTERVAL:-5}
-      - MONSTER_INTERVAL=${MONSTER_INTERVAL:-1800}
-      # Healthcheck порт
+      - USE_REDIS=${USE_REDIS:-false}
+      - "REDIS_URL=${REDIS_URL:-redis://localhost:6379/0}"
       - HEALTH_PORT=${HEALTH_PORT:-8081}
 
-    # Healthcheck — проверяет HTTP эндпоинт
     healthcheck:
-      test: ["CMD", "python3", "-c", "import aiohttp; import asyncio; asyncio.run(aiohttp.ClientSession().get('http://localhost:8081/health'))"]
+      test: ["CMD", "python3", "/healthcheck.py"]
       interval: 30s
       timeout: 10s
       retries: 3
       start_period: 10s
 
-    volumes:
-      # База данных
-      - ./data:/data
-
-    # Логи — последние 10 МБ, не более 3 файлов
     logging:
       driver: "json-file"
       options:
         max-size: "10m"
         max-file: "3"
+
+  monitor:
+    build: ./monitor
+    container_name: tg_autorpg_monitor
+    restart: unless-stopped
+    networks:
+      - autorpg_net
+    ports:
+      - "8082:8082"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    depends_on:
+      vpn:
+        condition: service_healthy
+    environment:
+      - API_URL=http://vpn:8081
+      - PORT=8082
+      - COMPOSE_PROJECT_NAME=tg_autorpg
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+    mem_limit: 256m
+    cpus: 0.3
+
+networks:
+  autorpg_net:
+    driver: bridge
+
+volumes:
+  pgdata:

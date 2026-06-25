@@ -53,7 +53,7 @@ class MonsterConfig:
         self._load()
     
     def _load(self):
-        config_path = Path(__file__).parent / "data" / "monsters.json"
+        config_path = Path(__file__).parent.parent / "data" / "monsters.json"
         if config_path.exists():
             with open(config_path) as f:
                 self._data = json.load(f)
@@ -63,12 +63,12 @@ class MonsterConfig:
     
     def _default_monsters(self) -> list[dict]:
         return [
-            {"id": "goblin", "name_ru": "Больной Гоблин", "name_en": "Sick Goblin", 
-             "level_mult": 1.0, "dps_mult": 1.0, "xp_mult": 1.0, "rank": "Common"},
-            {"id": "rat", "name_ru": "Бешеная Крыса", "name_en": "Mad Rat",
-             "level_mult": 0.5, "dps_mult": 0.5, "xp_mult": 0.5, "rank": "Common"},
-            {"id": "dragon", "name_ru": "Позолоченный Дракон", "name_en": "Gilded Dragon",
-             "level_mult": 3.0, "dps_mult": 5.0, "xp_mult": 5.0, "rank": "Legendary"},
+            {"id": "goblin", "name_ru": "Больной Гоблин", "name_en": "Sick Goblin", "type": "humanoid",
+             "level_mult": 1.0, "dps_mult": 1.0, "xp_mult": 1.0, "rank": "Common", "weight": 15},
+            {"id": "rat", "name_ru": "Бешеная Крыса", "name_en": "Mad Rat", "type": "animal",
+             "level_mult": 0.5, "dps_mult": 0.5, "xp_mult": 0.5, "rank": "Common", "weight": 15},
+            {"id": "dragon", "name_ru": "Позолоченный Дракон", "name_en": "Gilded Dragon", "type": "dragon",
+             "level_mult": 3.0, "dps_mult": 5.0, "xp_mult": 5.0, "rank": "Legendary", "weight": 1},
         ]
     
     def get_random(self) -> dict:
@@ -76,6 +76,22 @@ class MonsterConfig:
         weights = [m.get("weight", 1.0) for m in self._data]
         chosen = random.choices(self._data, weights)[0]
         return chosen
+    
+    def get_random_filtered(self, allowed_types: list = None, min_rank: str = None, max_rank: str = None) -> dict:
+        """Случайный монстр с фильтрацией по типу и рангу."""
+        pool = self._data[:]
+        if allowed_types:
+            pool = [m for m in pool if m.get("type") in allowed_types]
+        if min_rank:
+            rank_order = ["Common", "Uncommon", "Rare", "Epic", "Legendary"]
+            pool = [m for m in pool if rank_order.index(m.get("rank", "Common")) >= rank_order.index(min_rank)]
+        if max_rank:
+            rank_order = ["Common", "Uncommon", "Rare", "Epic", "Legendary"]
+            pool = [m for m in pool if rank_order.index(m.get("rank", "Common")) <= rank_order.index(max_rank)]
+        if not pool:
+            pool = [self._data[0]]
+        weights = [m.get("weight", 1.0) for m in pool]
+        return random.choices(pool, weights)[0]
     
     def get_by_id(self, monster_id: str) -> dict:
         """Получить монстра по ID"""
@@ -129,21 +145,24 @@ class MonsterFactory:
         )
     
     @classmethod
-    def create_random(cls, player_level: int = 1) -> IMonster:
-        """Создать случайного монстра"""
+    def create_random(cls, player_level: int = 1, allowed_types: list = None, min_rank: str = None, max_rank: str = None) -> IMonster:
+        """Создать случайного монстра с опциональной фильтрацией."""
         config = cls.get_config()
-        data = config.get_random()
+        if allowed_types is not None or min_rank is not None or max_rank is not None:
+            data = config.get_random_filtered(allowed_types, min_rank, max_rank)
+        else:
+            data = config.get_random()
         return cls.create(data["id"], player_level)
 
 
 class Monster(IMonster):
     """Реализация монстра из конфига"""
-    __slots__ = ('_id', '_level', '_name_ru', '_name_en', '_dps', '_xp', '_rank')
+    __slots__ = ('_id', '_level', '_name_ru', '_name_en', '_dps', '_xp', '_rank', '_variant')
     
     def __init__(self, monster_id: str, player_level: int, 
                  name_ru: str, name_en: str,
                  level_mult: float, dps_mult: float, 
-                 xp_mult: float, rank: str):
+                 xp_mult: float, rank: str, variant: str = "normal"):
         self._id = monster_id
         self._level = int(player_level * level_mult)
         self._name_ru = name_ru
@@ -151,6 +170,7 @@ class Monster(IMonster):
         self._dps = int(player_level * 10 * dps_mult)
         self._xp = int(player_level * 5 * xp_mult)
         self._rank = rank
+        self._variant = variant
     
     @property
     def name(self) -> str:
@@ -175,6 +195,10 @@ class Monster(IMonster):
     @property
     def rank(self) -> str:
         return self._rank
+    
+    @property
+    def variant(self) -> str:
+        return self._variant
 
 
 # === Пример кастомного монстра ===

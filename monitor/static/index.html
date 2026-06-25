@@ -1,0 +1,659 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>TG AutoRPG · Monitor</title>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body {
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+  background: #0d1117; color: #c9d1d9; min-height: 100vh;
+}
+
+/* Header */
+header {
+  background: #161b22; border-bottom: 1px solid #30363d;
+  padding: 16px 24px; display: flex; align-items: center; justify-content: space-between;
+}
+header h1 { font-size: 20px; font-weight: 600; color: #f0f6fc; }
+header h1 span { color: #58a6ff; }
+.header-right { display: flex; align-items: center; gap: 16px; font-size: 13px; color: #8b949e; }
+#last-update { font-variant-numeric: tabular-nums; }
+
+/* Status bar */
+.status-bar {
+  display: flex; flex-wrap: wrap; gap: 12px; padding: 12px 24px;
+  background: #0d1117; border-bottom: 1px solid #21262d;
+}
+.status-block {
+  display: flex; align-items: center; gap: 8px;
+  background: #161b22; border: 1px solid #30363d; border-radius: 6px;
+  padding: 8px 12px; font-size: 12px;
+}
+.status-block .dot {
+  width: 10px; height: 10px; border-radius: 50%;
+  background: #30363d; flex-shrink: 0;
+}
+.status-block .dot.green { background: #3fb950; box-shadow: 0 0 6px #3fb95080; }
+.status-block .dot.red { background: #f85149; box-shadow: 0 0 6px #f8514980; }
+.status-block .dot.yellow { background: #d29922; }
+.status-block .dot.blue { background: #58a6ff; }
+.status-block .dot.gray { background: #6e7681; }
+.status-block .name { color: #c9d1d9; font-weight: 500; }
+.status-block .detail { color: #8b949e; font-size: 11px; }
+
+/* Stats grid */
+.stats-grid {
+  display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  gap: 12px; padding: 16px 24px;
+}
+.stat-card {
+  background: #161b22; border: 1px solid #30363d; border-radius: 8px;
+  padding: 14px 16px; text-align: center;
+}
+.stat-card .label { font-size: 11px; text-transform: uppercase; letter-spacing: .5px; color: #8b949e; margin-bottom: 6px; }
+.stat-card .value { font-size: 24px; font-weight: 700; font-variant-numeric: tabular-nums; }
+.stat-card .value.green { color: #3fb950; }
+.stat-card .value.blue { color: #58a6ff; }
+.stat-card .value.gold { color: #d29922; }
+.stat-card .value.purple { color: #bc8cff; }
+.stat-card .value.red { color: #f85149; }
+.stat-card .value.orange { color: #f0883e; }
+.stat-card .value.cyan { color: #39c5cf; }
+.stat-card.db-card { grid-column: span 2; display: flex; flex-direction: column; justify-content: center; }
+.stat-card.db-card .sub { font-size: 12px; color: #8b949e; margin-top: 4px; }
+
+/* Main layout */
+.main-layout { display: flex; gap: 0; padding: 0 24px 24px; }
+@media (max-width: 900px) { .main-layout { flex-direction: column; } }
+
+/* Player list */
+.player-panel {
+  width: 340px; min-width: 280px; background: #161b22; border: 1px solid #30363d;
+  border-radius: 8px; display: flex; flex-direction: column; max-height: calc(100vh - 380px);
+}
+@media (max-width: 900px) { .player-panel { width: 100%; max-height: 400px; } }
+.player-panel-header { padding: 12px 16px; border-bottom: 1px solid #30363d; }
+.player-panel-header input {
+  width: 100%; padding: 8px 12px; background: #0d1117; border: 1px solid #30363d;
+  border-radius: 6px; color: #c9d1d9; font-size: 13px; outline: none;
+}
+.player-panel-header input:focus { border-color: #58a6ff; }
+.player-list { overflow-y: auto; flex: 1; }
+.player-item {
+  display: flex; align-items: center; padding: 8px 16px; cursor: pointer;
+  border-bottom: 1px solid #21262d; gap: 10px; transition: background .15s;
+  font-size: 13px;
+}
+.player-item:hover { background: #1c2128; }
+.player-item.active { background: #1f2937; border-left: 3px solid #58a6ff; padding-left: 13px; }
+.player-item .rank { color: #8b949e; min-width: 28px; font-size: 12px; }
+.player-item .name { flex: 1; font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.player-item .level { color: #8b949e; font-size: 12px; }
+.player-item .online-dot {
+  width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0;
+}
+.player-item .online-dot.on { background: #3fb950; }
+.player-item .online-dot.idle { background: #d29922; }
+.player-item .online-dot.off { background: #30363d; }
+
+/* Detail panel */
+.detail-panel {
+  flex: 1; margin-left: 16px; background: #161b22; border: 1px solid #30363d;
+  border-radius: 8px; overflow-y: auto; max-height: calc(100vh - 380px);
+}
+@media (max-width: 900px) { .detail-panel { margin-left: 0; margin-top: 16px; max-height: none; } }
+.detail-empty {
+  display: flex; align-items: center; justify-content: center;
+  height: 200px; color: #8b949e; font-size: 14px;
+}
+.detail-content { padding: 20px; }
+
+/* Detail sections */
+.detail-header {
+  display: flex; align-items: center; gap: 16px; margin-bottom: 20px;
+  padding-bottom: 16px; border-bottom: 1px solid #30363d;
+}
+.detail-header .avatar {
+  width: 48px; height: 48px; border-radius: 50%; background: #1f2937;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 22px; font-weight: 700; color: #58a6ff;
+  border: 2px solid #30363d; flex-shrink: 0;
+}
+.detail-header .info h2 { font-size: 18px; color: #f0f6fc; }
+.detail-header .info .subtitle { font-size: 13px; color: #8b949e; margin-top: 2px; }
+.detail-header .info .subtitle .tag {
+  display: inline-block; padding: 1px 8px; border-radius: 12px; font-size: 11px;
+  background: #1f2937; color: #58a6ff; margin-right: 4px;
+}
+.detail-header .status-badge {
+  margin-left: auto; padding: 4px 12px; border-radius: 12px; font-size: 12px; font-weight: 500;
+}
+.detail-header .status-badge.online { background: #0f2d1a; color: #3fb950; border: 1px solid #3fb950; }
+.detail-header .status-badge.idle { background: #3a2a0a; color: #d29922; border: 1px solid #d29922; }
+.detail-header .status-badge.offline { background: #1c2128; color: #8b949e; border: 1px solid #30363d; }
+
+.section { margin-bottom: 20px; }
+.section h3 {
+  font-size: 13px; text-transform: uppercase; letter-spacing: .5px;
+  color: #8b949e; margin-bottom: 10px; padding-bottom: 6px;
+  border-bottom: 1px solid #21262d;
+}
+.info-grid {
+  display: grid; grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); gap: 8px;
+}
+.info-item {}
+.info-item .ilabel { font-size: 11px; color: #8b949e; }
+.info-item .ivalue { font-size: 14px; font-weight: 500; margin-top: 1px; }
+
+/* Time bar */
+.time-bar {
+  display: flex; height: 18px; border-radius: 4px; overflow: hidden;
+  background: #30363d; margin-top: 6px;
+}
+.time-bar > div { transition: width .3s; }
+.time-bar .seg-online { background: #3fb950; }
+.time-bar .seg-idle { background: #d29922; }
+.time-bar .seg-offline { background: #6e7681; }
+.time-legend { display: flex; gap: 14px; font-size: 11px; color: #8b949e; margin-top: 6px; }
+.time-legend span::before { content: "■ "; }
+.time-legend .l-online::before { color: #3fb950; }
+.time-legend .l-idle::before { color: #d29922; }
+.time-legend .l-offline::before { color: #6e7681; }
+
+/* Equipment */
+.equip-grid {
+  display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 8px;
+}
+.equip-item {
+  background: #0d1117; border: 1px solid #21262d; border-radius: 6px; padding: 10px 12px;
+}
+.equip-item .eslot { font-size: 11px; color: #8b949e; text-transform: uppercase; }
+.equip-item .ename { font-size: 13px; font-weight: 500; margin-top: 2px; color: #c9d1d9; }
+.equip-item .equal { font-size: 11px; color: #d29922; margin-top: 1px; }
+
+/* Tables inside detail */
+.data-table { width: 100%; border-collapse: collapse; font-size: 12px; }
+.data-table th { text-align: left; padding: 6px 8px; color: #8b949e; border-bottom: 1px solid #21262d; font-weight: 500; }
+.data-table td { padding: 6px 8px; border-bottom: 1px solid #21262d; }
+.data-table tr:hover td { background: #1c2128; }
+
+/* Scrollbar */
+::-webkit-scrollbar { width: 6px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: #30363d; border-radius: 3px; }
+
+/* Loading */
+.loading { text-align: center; padding: 40px; color: #8b949e; }
+.spinner { display: inline-block; width: 24px; height: 24px; border: 2px solid #30363d; border-top-color: #58a6ff; border-radius: 50%; animation: spin .8s linear infinite; }
+@keyframes spin { to { transform: rotate(360deg); } }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>TG <span>AutoRPG</span> · Monitor</h1>
+  <div class="header-right">
+    <span id="last-update"></span>
+    <span id="refresh-indicator" style="width:8px;height:8px;border-radius:50%;background:#3fb950;display:inline-block"></span>
+  </div>
+</header>
+
+<div class="status-bar" id="status-bar">
+  <div class="status-block" id="bot-status-block">
+    <div class="dot gray" id="bot-dot"></div>
+    <div>
+      <div class="name" id="bot-status-text">Bot …</div>
+      <div class="detail" id="bot-status-detail">connecting</div>
+    </div>
+  </div>
+  <div id="containers-blocks"></div>
+</div>
+
+<section class="stats-grid" id="stats-grid">
+  <div class="stat-card"><div class="label">Players</div><div class="value blue" id="stat-players">—</div></div>
+  <div class="stat-card"><div class="label">Online</div><div class="value green" id="stat-online">—</div></div>
+  <div class="stat-card"><div class="label">Idle</div><div class="value gold" id="stat-idle">—</div></div>
+  <div class="stat-card"><div class="label">Total XP</div><div class="value gold" id="stat-xp">—</div></div>
+  <div class="stat-card"><div class="label">Gold</div><div class="value gold" id="stat-gold">—</div></div>
+  <div class="stat-card"><div class="label">Tokens</div><div class="value purple" id="stat-tokens">—</div></div>
+  <div class="stat-card"><div class="label">Quests Done</div><div class="value blue" id="stat-quests">—</div></div>
+  <div class="stat-card"><div class="label">Monster Kills</div><div class="value orange" id="stat-mkills">—</div></div>
+  <div class="stat-card"><div class="label">Boss Kills</div><div class="value red" id="stat-bkills">—</div></div>
+  <div class="stat-card"><div class="label">Deaths</div><div class="value red" id="stat-deaths">—</div></div>
+  <div class="stat-card"><div class="label">Total Online Time</div><div class="value green" id="stat-total-online">—</div></div>
+  <div class="stat-card"><div class="label">Total Idle Time</div><div class="value gold" id="stat-total-idle">—</div></div>
+  <div class="stat-card"><div class="label">Total Offline Time</div><div class="value cyan" id="stat-total-offline">—</div></div>
+  <div class="stat-card db-card">
+    <div class="label">Database</div>
+    <div class="value" id="stat-dbsize" style="color:#58a6ff;font-size:20px">—</div>
+    <div class="sub" id="stat-dbrows"></div>
+  </div>
+</section>
+
+<div class="main-layout">
+  <div class="player-panel">
+    <div class="player-panel-header">
+      <input type="text" id="player-search" placeholder="Search players…" autocomplete="off">
+    </div>
+    <div class="player-list" id="player-list"></div>
+  </div>
+  <div class="detail-panel" id="detail-panel">
+    <div class="detail-empty">Select a player</div>
+  </div>
+</div>
+
+<script>
+// Formatting helpers
+function fmt(n) {
+  if (n === null || n === undefined) return '—';
+  if (typeof n === 'bigint') n = Number(n);
+  if (n >= 1e9) return (n / 1e9).toFixed(2) + 'B';
+  if (n >= 1e6) return (n / 1e6).toFixed(2) + 'M';
+  if (n >= 1e3) return (n / 1e3).toFixed(1) + 'K';
+  return n.toLocaleString();
+}
+function fmtBytes(b) {
+  if (b === 0) return '0 B';
+  const u = ['B','KB','MB','GB'];
+  let i = 0;
+  let v = b;
+  while (v >= 1024 && i < u.length - 1) { v /= 1024; i++; }
+  return v.toFixed(1) + ' ' + u[i];
+}
+function fmtDuration(seconds) {
+  if (!seconds || seconds < 0) return '0s';
+  if (seconds < 60) return seconds + 's';
+  if (seconds < 3600) return Math.floor(seconds/60) + 'm ' + (seconds%60) + 's';
+  if (seconds < 86400) {
+    const h = Math.floor(seconds/3600);
+    const m = Math.floor((seconds%3600)/60);
+    return h + 'h ' + m + 'm';
+  }
+  const d = Math.floor(seconds/86400);
+  const h = Math.floor((seconds%86400)/3600);
+  return d + 'd ' + h + 'h';
+}
+function timeAgo(ts) {
+  if (!ts || ts === 0) return '—';
+  const diff = Math.floor(Date.now() / 1000) - ts;
+  if (diff < 60) return diff + 's ago';
+  if (diff < 3600) return Math.floor(diff / 60) + 'm ago';
+  if (diff < 86400) return Math.floor(diff / 3600) + 'h ago';
+  return Math.floor(diff / 86400) + 'd ago';
+}
+function fmtTime(ts) {
+  if (!ts || ts === 0) return '—';
+  return new Date(ts * 1000).toLocaleString();
+}
+
+// State
+let players = [];
+let selectedUid = null;
+let lastStatus = null;
+
+async function fetchJSON(url) {
+  const r = await fetch(url);
+  if (!r.ok) throw new Error(await r.text());
+  return r.json();
+}
+
+// Load global stats
+async function loadStats() {
+  try {
+    const d = await fetchJSON('/api/stats');
+    document.getElementById('stat-players').textContent = fmt(d.total_players);
+    document.getElementById('stat-online').textContent = fmt(d.online_now);
+    document.getElementById('stat-idle').textContent = fmt(d.idle_now);
+    document.getElementById('stat-xp').textContent = fmt(d.total_xp);
+    document.getElementById('stat-gold').textContent = fmt(d.total_gold);
+    document.getElementById('stat-tokens').textContent = fmt(d.total_tokens);
+    document.getElementById('stat-quests').textContent = fmt(d.total_quests);
+    document.getElementById('stat-mkills').textContent = fmt(d.total_monster_kills);
+    document.getElementById('stat-bkills').textContent = fmt(d.total_boss_kills);
+    document.getElementById('stat-deaths').textContent = fmt(d.total_deaths);
+    document.getElementById('stat-total-online').textContent = fmtDuration(d.total_online_seconds_all);
+    document.getElementById('stat-total-idle').textContent = fmtDuration(d.total_idle_seconds_all);
+    document.getElementById('stat-total-offline').textContent = fmtDuration(d.total_offline_seconds_all);
+    document.getElementById('stat-dbsize').textContent = fmtBytes(d.db_size);
+    document.getElementById('stat-dbrows').textContent = fmt(d.total_rows) + ' rows · ' + fmt(d.total_players) + ' players';
+    document.getElementById('last-update').textContent = new Date().toLocaleTimeString();
+  } catch (e) {
+    console.error('Stats error:', e);
+  }
+}
+
+// Load status (bot + containers)
+async function loadStatus() {
+  try {
+    const d = await fetchJSON('/api/status');
+    lastStatus = d;
+    renderStatus(d);
+  } catch (e) {
+    console.error('Status error:', e);
+    document.getElementById('bot-status-text').textContent = 'Bot unreachable';
+    document.getElementById('bot-status-detail').textContent = String(e.message || e);
+    document.getElementById('bot-dot').className = 'dot red';
+  }
+}
+
+function renderStatus(d) {
+  // Bot block
+  const bot = d.bot || {};
+  const botDot = document.getElementById('bot-dot');
+  const botText = document.getElementById('bot-status-text');
+  const botDetail = document.getElementById('bot-status-detail');
+
+  if (bot.alive && bot.db_connected) {
+    botDot.className = 'dot green';
+    botText.textContent = 'Bot OK';
+  } else if (bot.alive) {
+    botDot.className = 'dot yellow';
+    botText.textContent = 'Bot degraded';
+  } else {
+    botDot.className = 'dot red';
+    botText.textContent = 'Bot down';
+  }
+
+  const tickTxt = bot.last_tick_ago != null ? 'last tick ' + bot.last_tick_ago + 's ago' : 'no ticks yet';
+  const upTxt = bot.uptime_seconds ? 'uptime ' + fmtDuration(bot.uptime_seconds) : '';
+  const dbTxt = bot.db_connected ? 'DB ok' : 'DB down';
+  botDetail.textContent = [dbTxt, upTxt, tickTxt].filter(Boolean).join(' · ');
+
+  // Container blocks
+  const blocks = document.getElementById('containers-blocks');
+  if (!d.containers || d.containers.length === 0 || (d.containers.length === 1 && d.containers[0].error)) {
+    const msg = (d.containers && d.containers[0] && d.containers[0].error) || 'no docker socket';
+    blocks.innerHTML = '<div class="status-block"><div class="dot yellow"></div><div><div class="name">Containers</div><div class="detail">' + esc(msg) + '</div></div></div>';
+    return;
+  }
+  blocks.innerHTML = d.containers.map(c => {
+    let dotCls = 'gray';
+    if (c.state === 'running') {
+      if (c.health === 'healthy' || !c.health) dotCls = 'green';
+      else if (c.health === 'unhealthy' || c.health === 'starting') dotCls = 'yellow';
+    } else if (c.state === 'restarting') {
+      dotCls = 'yellow';
+    } else {
+      dotCls = 'red';
+    }
+    const upTxt = c.uptime_seconds ? fmtDuration(c.uptime_seconds) : '';
+    const detail = c.service + (upTxt ? ' · ' + upTxt : '');
+    return '<div class="status-block"><div class="dot ' + dotCls + '"></div><div><div class="name">' + esc(c.name.replace(/^tg_autorpg[-_]?/, '')) + '</div><div class="detail">' + esc(detail) + '</div></div></div>';
+  }).join('');
+}
+
+// Load player list
+async function loadPlayers(search) {
+  try {
+    const url = search ? '/api/players?search=' + encodeURIComponent(search) : '/api/players';
+    players = await fetchJSON(url);
+    renderPlayerList();
+  } catch (e) {
+    console.error('Players error:', e);
+  }
+}
+
+function renderPlayerList() {
+  const el = document.getElementById('player-list');
+  if (players.length === 0) {
+    el.innerHTML = '<div style="padding:20px;text-align:center;color:#8b949e;font-size:13px">No players</div>';
+    return;
+  }
+  el.innerHTML = players.map((p, i) => {
+    const active = p.uid === selectedUid ? ' active' : '';
+    const dot = p.online ? (p.idle_since ? 'idle' : 'on') : 'off';
+    return `<div class="player-item${active}" data-uid="${p.uid}">
+      <span class="rank">#${i+1}</span>
+      <span class="name">${esc(p.name)}</span>
+      <span class="level">Lv${p.level}</span>
+      <span class="online-dot ${dot}"></span>
+    </div>`;
+  }).join('');
+
+  el.querySelectorAll('.player-item').forEach(el => {
+    el.addEventListener('click', () => {
+      const uid = parseInt(el.dataset.uid);
+      selectPlayer(uid);
+    });
+  });
+}
+
+function esc(s) {
+  if (s === null || s === undefined) return '';
+  const d = document.createElement('div');
+  d.textContent = String(s);
+  return d.innerHTML;
+}
+
+// Select player
+async function selectPlayer(uid) {
+  selectedUid = uid;
+  renderPlayerList();
+  const panel = document.getElementById('detail-panel');
+  panel.innerHTML = '<div class="loading"><div class="spinner"></div></div>';
+  try {
+    const p = await fetchJSON('/api/players/' + uid);
+    renderPlayerDetail(p, panel);
+  } catch (e) {
+    panel.innerHTML = '<div class="detail-empty">Error loading player</div>';
+  }
+}
+
+function renderPlayerDetail(p, panel) {
+  const onlineClass = p.online ? (p.current_idle_seconds > 0 ? 'idle' : 'online') : 'offline';
+  const onlineLabel = p.online ? (p.current_idle_seconds > 0 ? 'Idle' : 'Online') : 'Offline';
+  const initial = (p.name || '?')[0].toUpperCase();
+  const jobRace = [p.race, p.job].filter(Boolean).join(' · ');
+  const alignLabel = p.align > 0 ? 'Good' : p.align < 0 ? 'Evil' : 'Neutral';
+
+  const totalT = (p.total_online_seconds || 0) + (p.total_idle_seconds || 0) + (p.total_offline_seconds || 0);
+  const onPct = totalT ? ((p.total_online_seconds || 0) / totalT * 100) : 0;
+  const idPct = totalT ? ((p.total_idle_seconds || 0) / totalT * 100) : 0;
+  const offPct = totalT ? ((p.total_offline_seconds || 0) / totalT * 100) : 0;
+
+  panel.innerHTML = `
+    <div class="detail-content">
+      <div class="detail-header">
+        <div class="avatar">${esc(initial)}</div>
+        <div class="info">
+          <h2>${esc(p.name)}</h2>
+          <div class="subtitle">
+            <span class="tag">Lv ${p.level}</span>
+            ${esc(jobRace)}
+          </div>
+        </div>
+        <div class="status-badge ${onlineClass}">${onlineLabel}</div>
+      </div>
+
+      <div class="section">
+        <h3>⏱ Time Tracking</h3>
+        <div class="info-grid">
+          <div class="info-item"><div class="ilabel">Account Age</div><div class="ivalue">${fmtDuration(p.account_age_seconds)}</div></div>
+          <div class="info-item"><div class="ilabel">Total Online</div><div class="ivalue green">${fmtDuration(p.total_online_seconds)}</div></div>
+          <div class="info-item"><div class="ilabel">Total IDLE</div><div class="ivalue gold">${fmtDuration(p.total_idle_seconds)}</div></div>
+          <div class="info-item"><div class="ilabel">Total Offline</div><div class="ivalue cyan">${fmtDuration(p.total_offline_seconds)}</div></div>
+          ${p.current_session_seconds ? `<div class="info-item"><div class="ilabel">Current Session</div><div class="ivalue green">${fmtDuration(p.current_session_seconds)}</div></div>` : ''}
+          ${p.current_idle_seconds ? `<div class="info-item"><div class="ilabel">Current IDLE</div><div class="ivalue gold">${fmtDuration(p.current_idle_seconds)}</div></div>` : ''}
+        </div>
+        <div class="time-bar" title="Online / IDLE / Offline distribution">
+          <div class="seg-online" style="width:${onPct.toFixed(1)}%"></div>
+          <div class="seg-idle" style="width:${idPct.toFixed(1)}%"></div>
+          <div class="seg-offline" style="width:${offPct.toFixed(1)}%"></div>
+        </div>
+        <div class="time-legend">
+          <span class="l-online">Online ${onPct.toFixed(1)}%</span>
+          <span class="l-idle">IDLE ${idPct.toFixed(1)}%</span>
+          <span class="l-offline">Offline ${offPct.toFixed(1)}%</span>
+        </div>
+      </div>
+
+      <div class="section">
+        <h3>Core Stats</h3>
+        <div class="info-grid">
+          <div class="info-item"><div class="ilabel">Total XP</div><div class="ivalue">${fmt(p.totalxp)}</div></div>
+          <div class="info-item"><div class="ilabel">Current XP</div><div class="ivalue">${fmt(p.currentxp)}</div></div>
+          <div class="info-item"><div class="ilabel">Next XP</div><div class="ivalue">${fmt(p.nextxp)}</div></div>
+          <div class="info-item"><div class="ilabel">XP Lost</div><div class="ivalue">${fmt(p.totalxplost)}</div></div>
+          <div class="info-item"><div class="ilabel">HP</div><div class="ivalue">${p.hp} / ${p.max_hp}</div></div>
+          <div class="info-item"><div class="ilabel">MP</div><div class="ivalue">${p.mp} / ${p.max_mp}</div></div>
+          <div class="info-item"><div class="ilabel">Defense</div><div class="ivalue">${p.defense}</div></div>
+          <div class="info-item"><div class="ilabel">Alignment</div><div class="ivalue">${alignLabel} (${p.align})</div></div>
+        </div>
+      </div>
+
+      <div class="section">
+        <h3>Economy</h3>
+        <div class="info-grid">
+          <div class="info-item"><div class="ilabel">Gold</div><div class="ivalue gold">${fmt(p.gold)}</div></div>
+          <div class="info-item"><div class="ilabel">Tokens</div><div class="ivalue purple">${fmt(p.tokens)}</div></div>
+          <div class="info-item"><div class="ilabel">Star Purchases</div><div class="ivalue">${p.star_purchases.count}</div></div>
+          <div class="info-item"><div class="ilabel">Stars Spent</div><div class="ivalue">${fmt(p.star_purchases.total_stars)}</div></div>
+          <div class="info-item"><div class="ilabel">Tokens Bought</div><div class="ivalue purple">${fmt(p.star_purchases.total_tokens)}</div></div>
+        </div>
+      </div>
+
+      <div class="section">
+        <h3>Combat</h3>
+        <div class="info-grid">
+          <div class="info-item"><div class="ilabel">Monster Kills</div><div class="ivalue">${fmt(p.monster_kills)}</div></div>
+          <div class="info-item"><div class="ilabel">Monster Deaths</div><div class="ivalue red">${fmt(p.monster_deaths)}</div></div>
+          <div class="info-item"><div class="ilabel">Boss Kills</div><div class="ivalue">${fmt(p.boss_kills)}</div></div>
+          <div class="info-item"><div class="ilabel">PvP Wins</div><div class="ivalue green">${fmt(p.wins)}</div></div>
+          <div class="info-item"><div class="ilabel">PvP Losses</div><div class="ivalue red">${fmt(p.loss)}</div></div>
+          <div class="info-item"><div class="ilabel">Fight Streak</div><div class="ivalue">${fmt(p.fight_streak)}</div></div>
+        </div>
+      </div>
+
+      <div class="section">
+        <h3>Quests</h3>
+        <div class="info-grid">
+          <div class="info-item"><div class="ilabel">Completed</div><div class="ivalue">${fmt(p.totalquests)}</div></div>
+          <div class="info-item"><div class="ilabel">On Quest</div><div class="ivalue">${p.onquest ? 'Yes' : 'No'}</div></div>
+        </div>
+        ${renderRecentQuests(p.recent_quests)}
+      </div>
+
+      <div class="section">
+        <h3>Equipment</h3>
+        <div class="equip-grid">
+          ${renderEquip('weapon', p.weapon)}
+          ${renderEquip('shield', p.shield)}
+          ${renderEquip('helmet', p.helmet)}
+          ${renderEquip('chest', p.chest)}
+          ${renderEquip('gloves', p.gloves)}
+          ${renderEquip('boots', p.boots)}
+          ${renderEquip('ring', p.ring)}
+          ${renderEquip('amulet', p.amulet)}
+        </div>
+      </div>
+
+      ${p.passives && p.passives.length ? renderPassives(p.passives) : ''}
+      ${p.active_skills && p.active_skills.length ? renderActiveSkills(p.active_skills) : ''}
+
+      ${p.clan ? renderClan(p.clan) : ''}
+
+      <div class="section">
+        <h3>Timestamps</h3>
+        <div class="info-grid">
+          <div class="info-item"><div class="ilabel">Created</div><div class="ivalue">${fmtTime(p.created)}</div></div>
+          <div class="info-item"><div class="ilabel">Last Login</div><div class="ivalue">${fmtTime(p.lastlogin)} (${timeAgo(p.lastlogin)})</div></div>
+          <div class="info-item"><div class="ilabel">Last Online At</div><div class="ivalue">${p.last_online_at ? fmtTime(p.last_online_at) : '—'}</div></div>
+          <div class="info-item"><div class="ilabel">Last IDLE At</div><div class="ivalue">${p.last_idle_at ? fmtTime(p.last_idle_at) : '—'}</div></div>
+        </div>
+      </div>
+
+      ${p.prestige_count > 0 ? renderPrestige(p) : ''}
+    </div>
+  `;
+}
+
+function renderEquip(slot, item) {
+  if (!item || typeof item !== 'object' || !item.name) {
+    return `<div class="equip-item"><div class="eslot">${slot}</div><div class="ename" style="color:#8b949e">Empty</div></div>`;
+  }
+  const qual = item.quality || item.rank || '';
+  return `<div class="equip-item">
+    <div class="eslot">${slot}</div>
+    <div class="ename">${esc(item.name)}</div>
+    ${qual ? `<div class="equal">${esc(qual)}${item.dps ? ' · ' + item.dps + ' DPS' : ''}</div>` : ''}
+  </div>`;
+}
+
+function renderRecentQuests(quests) {
+  if (!quests || quests.length === 0) return '';
+  return `<table class="data-table" style="margin-top:8px">
+    <thead><tr><th>Type</th><th>Title</th><th>Progress</th><th>Reward</th><th>Status</th></tr></thead>
+    <tbody>${quests.map(q => {
+      const progress = q.target_count ? q.progress + '/' + q.target_count : q.progress;
+      const reward = [q.reward_xp ? q.reward_xp + ' XP' : '', q.reward_gold ? q.reward_gold + 'G' : ''].filter(Boolean).join(' + ') || '—';
+      return `<tr>
+        <td>${esc(q.quest_type || '')}</td>
+        <td>${esc((q.title || '').slice(0, 30))}</td>
+        <td>${progress}</td>
+        <td>${reward}</td>
+        <td>${q.status || '—'}</td>
+      </tr>`;
+    }).join('')}</tbody>
+  </table>`;
+}
+
+function renderPassives(passives) {
+  return `<div class="section">
+    <h3>Passive Skills</h3>
+    <table class="data-table">
+      <thead><tr><th>Skill</th><th>Level</th><th>Equipped</th></tr></thead>
+      <tbody>${passives.map(p => `<tr><td>${esc(p.passive_id)}</td><td>${p.level}</td><td>${p.equipped ? '✓' : '—'}</td></tr>`).join('')}</tbody>
+    </table>
+  </div>`;
+}
+
+function renderActiveSkills(skills) {
+  return `<div class="section">
+    <h3>Active Skills</h3>
+    <table class="data-table">
+      <thead><tr><th>Skill</th><th>Level</th><th>Uses</th></tr></thead>
+      <tbody>${skills.map(s => `<tr><td>${esc(s.skill_id)}</td><td>${s.level}</td><td>${s.use_count}</td></tr>`).join('')}</tbody>
+    </table>
+  </div>`;
+}
+
+function renderClan(clan) {
+  return `<div class="section">
+    <h3>Clan</h3>
+    <div class="info-grid">
+      <div class="info-item"><div class="ilabel">Name</div><div class="ivalue">${esc(clan.name)} [${esc(clan.tag)}]</div></div>
+      <div class="info-item"><div class="ilabel">Clan Level</div><div class="ivalue">${clan.level}</div></div>
+      <div class="info-item"><div class="ilabel">Role</div><div class="ivalue">${esc(clan.role)}</div></div>
+    </div>
+  </div>`;
+}
+
+function renderPrestige(p) {
+  return `<div class="section">
+    <h3>Prestige</h3>
+    <div class="info-grid">
+      <div class="info-item"><div class="ilabel">Prestige</div><div class="ivalue purple">${p.prestige_count}</div></div>
+      <div class="info-item"><div class="ilabel">Bonus %</div><div class="ivalue">${p.prestige_bonus}%</div></div>
+      <div class="info-item"><div class="ilabel">XP Lv</div><div class="ivalue">${p.prestige_xp_level}</div></div>
+      <div class="info-item"><div class="ilabel">Gold Lv</div><div class="ivalue">${p.prestige_gold_level}</div></div>
+    </div>
+  </div>`;
+}
+
+// Search
+document.getElementById('player-search').addEventListener('input', (e) => {
+  const q = e.target.value.trim();
+  loadPlayers(q || undefined);
+});
+
+// Init
+loadStatus();
+loadStats();
+loadPlayers();
+setInterval(() => { loadStats(); loadStatus(); }, 10000);
+</script>
+
+</body>
+</html>

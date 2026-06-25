@@ -10,6 +10,9 @@ RUN groupadd -r appgroup && useradd -r -g appgroup appuser
 # =============================================
 RUN apt-get update && apt-get install -y --no-install-recommends \
     gcc \
+    redis-server \
+    gosu \
+    && apt-get purge -y gcc && apt-get autoremove -y \
     && rm -rf /var/lib/apt/lists/*
 
 # =============================================
@@ -25,33 +28,32 @@ RUN pip install --no-cache-dir -r requirements.txt
 COPY src/ ./src/
 COPY maps/ ./maps/
 
+# Миграции Alembic
+COPY alembic.ini .
+COPY alembic/ ./alembic/
+
 # Entrypoint script
 COPY docker/entrypoint.sh /entrypoint.sh
 RUN chmod +x /entrypoint.sh
+
+# Healthcheck script
+COPY docker/healthcheck.py /healthcheck.py
+RUN chmod +x /healthcheck.py
 
 # Папка для БД (создаётся в entrypoint с правильными правами)
 RUN mkdir -p /data
 
 # =============================================
-# ENV — from environment variables (passed by docker-compose)
-# =============================================
-ENV TELEGRAM_TOKEN="${TELEGRAM_TOKEN}"
-ENV ADMIN_IDS="${ADMIN_IDS}"
-ENV DB_TYPE="${DB_TYPE:-sqlite+aiosqlite}"
-ENV DB_PATH="${DB_PATH:-/data/autorpg.db}"
-ENV DBTYPE="${DBTYPE}"
-ENV HEALTH_PORT="${HEALTH_PORT:-8081}"
-
-# =============================================
 # Healthcheck для Docker
 # =============================================
 HEALTHCHECK --interval=30s --timeout=10s --start-period=10s --retries=3 \
-  CMD python3 -c "import asyncio; import aiohttp; asyncio.run(aiohttp.ClientSession().get('http://localhost:8080/health'))" || exit 1
+  CMD ["python3", "/healthcheck.py"]
 
 # =============================================
-# Запуск от не-root с entrypoint
+# Entrypoint от root (чинит права БД) + su-exec для drop привилегий
 # =============================================
-USER appuser
 WORKDIR /app/src
 ENTRYPOINT ["/entrypoint.sh"]
 CMD ["python3", "bot.py"]
+
+# Папка /data создана; entrypoint чинит права БД через chown

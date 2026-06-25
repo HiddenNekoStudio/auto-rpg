@@ -16,8 +16,8 @@ from telegram import Bot
 from telegram.ext import Application, ApplicationBuilder
 
 import config as cfg
-import sqlalchemy
-from db import database, engine, metadata
+
+logger = logging.getLogger(__name__)
 
 # Глобальный экземпляр бота (доступен после старта)
 _bot_instance: Bot | None = None
@@ -30,42 +30,8 @@ def get_bot() -> Bot | None:
 # Вспомогательные функции (общие для всех модулей)
 # ──────────────────────────────────────────────
 
-def ctime(seconds: int) -> str:
-    """Переводит секунды в читаемый формат."""
-    intervals = [
-        ("нед.", 604800),
-        ("дн.",  86400),
-        ("ч.",   3600),
-        ("мин.", 60),
-        ("сек.", 1),
-    ]
-    result = []
-    for name, count in intervals:
-        value = seconds // count
-        seconds -= value * count
-        if value:
-            result.append(f"{value} {name}")
-    return ", ".join(result) if result else "0 сек."
-
-
-def format_short(n: int) -> str:
-    """Сокращает число: 1500 → 1.5K, 1500000 → 1.5M"""
-    if n >= 1_000_000_000:
-        return f"{n / 1_000_000_000:.1f}G"
-    elif n >= 1_000_000:
-        return f"{n / 1_000_000:.1f}M"
-    elif n >= 1_000:
-        return f"{n / 1_000:.1f}K"
-    return str(n)
-
-
-def item_string(item: dict) -> str:
-    """Форматирует предмет в строку с эмодзи редкости."""
-    emoji = cfg.RARITY_EMOJI.get(item.get("rank", "Common"), "⚪")
-    base = f"{emoji} {item['quality']} {item['prefix']}{item['name']}{item['suffix']} ({item['condition']}) [⚔️{item['dps']}]"
-    if item.get("flair"):
-        base += f"\n  _{item['flair']}_"
-    return base
+# Импортируем из services для избежания дублирования
+from services import ctime, format_short, item_string
 
 
 def readfile(e: str) -> list[str]:
@@ -81,26 +47,37 @@ def readfile(e: str) -> list[str]:
 
 
 async def send_to_players(bot: Bot, text: str, player_uids: list = None,
-                          parse_mode: str = "Markdown", reply_markup=None) -> None:
+                          parse_mode: str = "Markdown", reply_markup=None,
+                          force: bool = False) -> None:
     """
     Отправляет сообщение напрямую в личку игрокам.
     Если player_uids не указан — шлёт всем онлайн-игрокам.
     Если указан — только перечисленным uid.
     Автоматически повторяет при сетевых ошибках.
+    Отправка конкурентная через asyncio.gather.
+    force=True — игнорирует optin игрока (для админ-команд).
     """
     import asyncio
     from telegram.error import NetworkError, RetryAfter, TimedOut
     from db import Player
-    if player_uids is None:
-        players = await Player.objects.all(online=True)
+    if force:
+        if player_uids is None:
+            players = await Player.objects.all(online=True)
+            uids = [p.uid for p in players]
+        else:
+            uids = player_uids
+    elif player_uids is None:
+        players = await Player.objects.filter(online=True, optin=True).all()
         uids = [p.uid for p in players]
     else:
-        uids = player_uids
-    for uid in uids:
+        players = await Player.objects.filter(uid__in=player_uids, optin=True).all()
+        uids = [p.uid for p in players]
+
+    async def _send_one(uid: int) -> None:
         for attempt in range(3):
             try:
                 await bot.send_message(chat_id=uid, text=text, parse_mode=parse_mode, reply_markup=reply_markup)
-                break
+                return
             except RetryAfter as e:
                 await asyncio.sleep(e.retry_after + 1)
             except (NetworkError, TimedOut):
@@ -108,7 +85,9 @@ async def send_to_players(bot: Bot, text: str, player_uids: list = None,
                     await asyncio.sleep(1.5 * (attempt + 1))
             except Exception as e:
                 logging.debug("Не удалось отправить игроку %s: %s", uid, e)
-                break
+                return
+
+    await asyncio.gather(*[_send_one(uid) for uid in uids])
 
 
 # Алиасы для обратной совместимости
@@ -124,74 +103,29 @@ async def send_to_announce(bot: Bot, text: str, parse_mode: str = "Markdown") ->
 # ──────────────────────────────────────────────
 
 def init_db():
-    """Создаёт таблицы в БД если их нет + применяет миграции для новых колонок."""
-    metadata.create_all(engine)
+    """Применяет миграции Alembic."""
+    from alembic.config import Config
+    from alembic import command
+    from pathlib import Path
 
-    # Миграции — добавляем новые колонки если их нет (безопасно для существующей БД)
-    migrations = [
-        "ALTER TABLE users ADD COLUMN lang VARCHAR(5) NOT NULL DEFAULT ''",
-        "ALTER TABLE users ADD COLUMN race VARCHAR(20) NOT NULL DEFAULT ''",  # расы
-        "ALTER TABLE users ADD COLUMN state VARCHAR(20) NOT NULL DEFAULT 'peaceful'",
-        "ALTER TABLE users ADD COLUMN state_context TEXT NOT NULL DEFAULT '{}'",
-        "ALTER TABLE users ADD COLUMN auto_accept_quests VARCHAR(10) DEFAULT 'off'",
-    ]
-    
-    # Миграции для player_quests
-    quest_migrations = [
-        # Legacy columns from old system - add if not exists
-        "ALTER TABLE player_quests ADD COLUMN quest_id INTEGER DEFAULT 0",
-        "ALTER TABLE player_quests ADD COLUMN quest_id_str VARCHAR(50) DEFAULT ''",
-        "ALTER TABLE player_quests ADD COLUMN location_name VARCHAR(100) DEFAULT ''",
-        "ALTER TABLE player_quests ADD COLUMN location_x INTEGER DEFAULT 0",
-        "ALTER TABLE player_quests ADD COLUMN location_y INTEGER DEFAULT 0",
-        "ALTER TABLE player_quests ADD COLUMN target_location_id VARCHAR(50) DEFAULT ''",
-        "ALTER TABLE player_quests ADD COLUMN location_locked INTEGER DEFAULT 0",
-        "ALTER TABLE player_quests ADD COLUMN quest_id_str VARCHAR(50) DEFAULT ''",
-        # NEW QUEST SYSTEM COLUMNS
-        "ALTER TABLE player_quests ADD COLUMN quest_key VARCHAR(36) DEFAULT ''",
-        "ALTER TABLE player_quests ADD COLUMN category VARCHAR(30) DEFAULT ''",
-        "ALTER TABLE player_quests ADD COLUMN target_type VARCHAR(20) DEFAULT ''",
-        "ALTER TABLE player_quests ADD COLUMN target_id VARCHAR(50) DEFAULT ''",
-        "ALTER TABLE player_quests ADD COLUMN reward_item VARCHAR(100) DEFAULT ''",
-        "ALTER TABLE player_quests ADD COLUMN expires_at INTEGER DEFAULT 0",
-        "ALTER TABLE player_quests ADD COLUMN accepted_at INTEGER DEFAULT 0",
-        "ALTER TABLE player_quests ADD COLUMN cooldown_until INTEGER DEFAULT 0",
-        "ALTER TABLE player_quests ADD COLUMN last_progress_at INTEGER DEFAULT 0",
-        # FIX: pending → offered
-        "UPDATE player_quests SET status='offered' WHERE status='pending'",
-    ]
-    
-    with engine.connect() as conn:
-        for sql in migrations:
-            try:
-                conn.execute(sqlalchemy.text(sql))
-                conn.commit()
-                col = sql.split("ADD COLUMN")[1].strip().split()[0]
-                logging.info("Миграция применена: добавлена колонка %s", col)
-            except Exception:
-                pass  # Колонка уже существует — пропускаем
-        
-        # Применяем миграции для player_quests
-        table_exists = conn.execute(sqlalchemy.text(
-            "SELECT name FROM sqlite_master WHERE type='table' AND name='player_quests'"
-        )).fetchone()
-        
-        if table_exists:
-            for sql in quest_migrations:
-                try:
-                    conn.execute(sqlalchemy.text(sql))
-                    conn.commit()
-                    col = sql.split("ADD COLUMN")[1].strip().split()[0]
-                    logging.info("Миграция применена: добавлена колонка %s", col)
-                except Exception:
-                    pass
+    alembic_cfg_path = Path(__file__).parent.parent / "alembic.ini"
+    if not alembic_cfg_path.exists():
+        logging.warning("alembic.ini not found, skipping migrations")
+        return
 
-    logging.info("База данных инициализирована")
+    alembic_cfg = Config(str(alembic_cfg_path))
+
+    script_dir = Path(__file__).parent.parent / "alembic"
+    alembic_cfg.set_main_option("script_location", str(script_dir))
+
+    command.upgrade(alembic_cfg, "head")
+    logging.info("Alembic migrations applied successfully")
 
 
 async def post_init(app: Application) -> None:
     """Вызывается после старта бота — подключаем БД, задаём команды и запускаем циклы."""
     global _bot_instance
+    from db import database
     from health import set_db_connected
     from game.bosses import init_bosses
     from game.states import StateManager
@@ -212,26 +146,35 @@ async def post_init(app: Application) -> None:
             logger.warning(f"Resolved {stuck_count} stuck players from previous session")
     except Exception as e:
         logger.warning(f"State cleanup failed (non-fatal): {e}")
-    if stuck_count > 0:
-        logger.warning(f"Resolved {stuck_count} stuck players from previous session")
 
     # Устанавливаем ТОЛЬКО публичные команды (админ-команды скрыты)
     from telegram import BotCommand
     await app.bot.set_my_commands([
-BotCommand("start",   "Главное меню"),
+        BotCommand("start",   "Главное меню"),
         BotCommand("profile", "Твой профиль"),
-        BotCommand("loot",   "Открыть лут"),
-        BotCommand("top",    "Топ игроков"),
         BotCommand("quest",   "Текущий квест"),
-        BotCommand("maps",   "Карта мира"),
-        BotCommand("bosses", "Список боссов"),
+        BotCommand("passives","Пассивные навыки"),
+        BotCommand("bosses",  "Список боссов"),
         BotCommand("help",    "Список команд"),
+        BotCommand("starshop","Star Магазин"),
     ])
 
     # Запускаем HTTP сервер для healthcheck в том же event loop
     from health import start_http_server
     health_port = int(__import__("os").environ.get("HEALTH_PORT", "8080"))
     await start_http_server(health_port, app.bot)
+
+    # Инициализируем EventBus обработчики
+    from services.event_handlers import init_event_handlers
+    init_event_handlers(app.bot)
+
+    # Загружаем плагины (импортируем модули для активации декораторов)
+    import plugins.monsters
+    import plugins.passive_skills
+    from plugins.registry import PluginRegistry
+    
+    await PluginRegistry.load_all()
+    logger.info(f"Plugins loaded: {PluginRegistry.list_loaded()}")
     
     # Запускаем игровые циклы
     from loops import start_loops
@@ -242,6 +185,7 @@ async def post_shutdown(app: Application) -> None:
     """Вызывается при завершении — отключаем БД."""
     from health import set_db_connected
     set_db_connected(False)
+    from db import database
     await database.disconnect()
 
 
@@ -313,18 +257,23 @@ def main():
 
     app.add_handler(TypeHandler(object, update_activity), group=-1)
 
-    # Rate limiting — 1 сообщение в секунду
-    _user_message_time = {}
+    # Rate limiting — TTLCache вместо mutable dict
+    # ПОЧЕМУ: TTLCache — автоматическая очистка, потокобезопасность
+    from core.cache import TTLCache
+    
+    _user_message_time = TTLCache(ttl=1.0, maxsize=10000)
 
     async def rate_limit_middleware(update, context):
         if not update.effective_user:
             return
-        uid = update.effective_user.id
-        now = _dt.datetime.now().timestamp()
-        last_time = _user_message_time.get(uid, 0)
-        if now - last_time < 1.0:
+        uid = str(update.effective_user.id)
+        
+        # Проверяем — если None, можно обрабатывать
+        if _user_message_time.get(uid) is not None:
             return  # Rate limited
-        _user_message_time[uid] = now
+        
+        # Устанавливаем flag
+        _user_message_time.set(uid, True)
 
     app.add_handler(TypeHandler(object, rate_limit_middleware), group=-2)
 
@@ -338,7 +287,19 @@ def main():
     bosses.register_handlers(app)
     import handlers.quests as quests
     quests.register_handlers(app)
-
+    from plugins.shop import register_shop_handlers
+    register_shop_handlers(app)
+    from plugins.vip_shop import register_vip_handlers
+    register_vip_handlers(app)
+    from plugins.stars_shop import register_stars_handlers
+    register_stars_handlers(app)
+    
+    from plugins.passive_skills import register_passive_handlers
+    register_passive_handlers(app)
+    
+    from game.skills.passives import init_passives
+    init_passives()
+    
     logging.info("Запуск %s v%s", cfg.GAME_NAME, cfg.VERSION)
     # run_polling управляет своим event loop — НЕ оборачиваем в asyncio.run()
     app.run_polling(drop_pending_updates=True)

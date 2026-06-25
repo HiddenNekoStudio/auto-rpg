@@ -181,11 +181,20 @@ async def check_quest_progress(
     
     target_id = event_data.get("target_id", "*")
     
-    quests = await PlayerQuest.objects.filter(
-        player_uid=player.uid,
-        category=category,
-        status="active"
-    ).all()
+    if event_type == "location_enter":
+        quests = await PlayerQuest.objects.filter(
+            player_uid=player.uid,
+            category="explore_any",
+            status="active"
+        ).all()
+    else:
+        quests = await PlayerQuest.objects.filter(
+            player_uid=player.uid,
+            category=category,
+            status="active"
+        ).all()
+    
+    visited_locations = set()
     
     for quest in quests:
         # Проверяем соответствие цели
@@ -193,6 +202,11 @@ async def check_quest_progress(
         normalized_target = _normalize_monster_type(target_id)
         if quest.target_id not in (target_id, "*", "", normalized_target):
             continue
+        
+        if quest.category == "explore_any" and target_id != "*":
+            if target_id in visited_locations:
+                continue
+            visited_locations.add(target_id)
         
         # Проверяем дедлайн
         if is_expired(quest):
@@ -333,22 +347,43 @@ async def complete_quest(player: Player, quest: PlayerQuest, bot=None):
             xp = int(xp * min(1 + (team_size - 1) * 0.5, 2.5))
             gold = int(gold * min(1 + (team_size - 1) * 0.5, 2.5))
     
+    # Prestige бонус XP
+    from plugins.vip_shop import has_prestige_xp_bonus, has_prestige_gold_bonus, get_prestige_xp_multiplier, get_prestige_gold_multiplier
+    if has_prestige_xp_bonus(player):
+        prestige_mult = get_prestige_xp_multiplier(player)
+        xp = int(xp * prestige_mult)
+    
+    # Prestige бонус Gold
+    if has_prestige_gold_bonus(player):
+        prestige_mult = get_prestige_gold_multiplier(player)
+        gold = int(gold * prestige_mult)
+    
     player.totalxp += xp
     player.gold += gold
-    await player.update(_columns=["totalxp", "gold"])
+    player.totalquests += 1
+    await player.update(_columns=["totalxp", "gold", "totalquests"])
     
     quest.status = "completed"
     quest.completed_at = int(time.time())
     await quest.update()
+    
+    auto_mode = getattr(player, "auto_accept_quests", "off") or "off"
     
     from bot import get_bot
     bot_instance = bot or get_bot()
     if bot_instance is None:
         return
     
+    if auto_mode == "silent":
+        return
+    
     from bot import send_to_players
     
-    text = f"✅ *Квест выполнен!*\n\n*{quest.title}*\n\n🎁 Награда:\n• XP: +{xp}\n• Золото: +{gold}"
+    lang = player.lang or "ru"
+    if lang == "en":
+        text = f"✅ *Quest completed!*\n\n*{quest.title}*\n\n🎁 Reward:\n• XP: +{xp}\n• Gold: +{gold}"
+    else:
+        text = f"✅ *Квест выполнен!*\n\n*{quest.title}*\n\n🎁 Награда:\n• XP: +{xp}\n• Золото: +{gold}"
     
     try:
         await send_to_players(bot_instance, text, player_uids=[player.uid], parse_mode="Markdown")
@@ -369,9 +404,7 @@ async def fail_quest(player: Player, quest: PlayerQuest, apply_penalty: bool = T
         player.totalxp = max(0, player.totalxp - xp_penalty)
         player.gold = max(0, player.gold - gold_penalty)
         
-        if quest.quest_type == "story":
-            player.align = max(-1000, player.align - 1)
-        await player.update(_columns=["totalxp", "gold", "align"])
+        await player.update(_columns=["totalxp", "gold"])
     
     quest.status = "failed"
     await quest.update()
@@ -382,7 +415,11 @@ async def fail_quest(player: Player, quest: PlayerQuest, apply_penalty: bool = T
         return
     
     from bot import send_to_players
-    text = f"❌ *Квест провален!*\n\n*{quest.title}*\n\nИстёк срок выполнения."
+    lang = player.lang or "ru"
+    if lang == "en":
+        text = f"❌ *Quest failed!*\n\n*{quest.title}*\n\nDeadline expired."
+    else:
+        text = f"❌ *Квест провален!*\n\n*{quest.title}*\n\nИстёк срок выполнения."
     
     try:
         await send_to_players(bot_instance, text, player_uids=[player.uid], parse_mode="Markdown")
@@ -449,53 +486,188 @@ async def get_quest_count(player: Player, quest_type: str = None) -> int:
 
 async def can_get_quest(player: Player, quest_type: str) -> bool:
     """Проверяет может ли игрок получить новый квест"""
-    from data.quest_config import QUEST_TYPE_CONFIG, MAX_TOTAL_ACTIVE_QUESTS
+    from data.quest_config import QUEST_TYPE_CONFIG, get_max_slots_for_player, get_slot_cost
     
     config = QUEST_TYPE_CONFIG.get(quest_type)
     if not config:
         return False
     
     now = int(time.time())
-    if player.quest_cooldown < now:
+    if player.quest_cooldown > now:
         return False
     
     current = await get_quest_count(player, quest_type)
-    return current < config.max_active
+    if current >= config.max_active:
+        return False
+    
+    active_quests = await PlayerQuest.objects.filter(
+        player_uid=player.uid,
+        status="active"
+    ).all()
+    
+    used_slots = sum(get_slot_cost(q.quest_type) for q in active_quests)
+    max_slots = get_max_slots_for_player(player.level)
+    
+    return (used_slots + get_slot_cost(quest_type)) <= max_slots
 
+
+async def get_quest_slots_available(player: Player) -> int:
+    """Возвращает количество свободных слотов для квестов"""
+    from data.quest_config import get_max_slots_for_player, get_slot_cost
+    
+    active_quests = await PlayerQuest.objects.filter(
+        player_uid=player.uid,
+        status="active"
+    ).all()
+    
+    used_slots = sum(get_slot_cost(q.quest_type) for q in active_quests)
+    max_slots = get_max_slots_for_player(player.level)
+    
+    return max(0, max_slots - used_slots)
+
+
+# ═══════════════════════════════════════════════════════════════
+# QUEST CLEANUP FUNCTIONS
+# ═══════════════════════════════════════════════════════════════
+
+async def cleanup_expired_offers():
+    """Удаляет предложенные/просроченные/отклонённые квесты старше N минут."""
+    import time
+    from data.quest_config import OFFERED_EXPIRE_MINUTES
+    
+    expire_threshold = int(time.time()) - (OFFERED_EXPIRE_MINUTES * 60)
+    
+    expired_offers = await PlayerQuest.objects.filter(
+        status__in=["offered", "expired", "declined"],
+        created_at__lt=expire_threshold
+    ).all()
+    
+    count = len(expired_offers)
+    for quest in expired_offers:
+        await quest.delete()
+    
+    if count > 0:
+        logging.info(f"Cleaned up {count} expired/declined/offered quest offers")
+    
+    return count
+
+
+async def cleanup_old_completed_quests(days: int = 7):
+    """Удаляет старые выполненные/проваленные/отмененные квесты."""
+    import time
+    from datetime import datetime, timedelta
+    
+    threshold = int((datetime.now() - timedelta(days=days)).timestamp())
+    
+    old_quests = await PlayerQuest.objects.filter(
+        status__in=["completed", "failed", "abandoned"],
+        completed_at__lt=threshold
+    ).all()
+    
+    count = len(old_quests)
+    for quest in old_quests:
+        await quest.delete()
+    
+    if count > 0:
+        logging.info(f"Cleaned up {count} old completed/failed quests")
+    
+    return count
+
+
+async def cleanup_player_quests(player: Player) -> int:
+    """Полная очистка всех неактивных квестов игрока."""
+    from datetime import datetime, timedelta
+    
+    threshold = int((datetime.now() - timedelta(days=30)).timestamp())
+    
+    old_quests = await PlayerQuest.objects.filter(
+        player_uid=player.uid,
+        status__in=["completed", "failed", "abandoned"],
+        completed_at__lt=threshold
+    ).all()
+    
+    count = len(old_quests)
+    for quest in old_quests:
+        await quest.delete()
+    
+    return count
+
+
+async def archive_completed_quest(quest: PlayerQuest) -> bool:
+    """Архивирует выполненный квест (для будущего использования)."""
+    import time
+    
+    quest.status = "archived"
+    quest.archived_at = int(time.time())
+    await quest.update()
+    return True
+
+
+# ═══════════════════════════════════════════════════════════════
+# UPDATED QUEST OFFER LOGIC
+# ═══════════════════════════════════════════════════════════════
 
 async def can_offer_new_quests(player: Player) -> bool:
     """
     Проверяет может ли игрок получить НОВЫЕ предложения квестов.
-    Используется для анти-спам системы.
+    Теперь считает только active квесты (offered не блокируют).
     """
-    from data.quest_config import MAX_TOTAL_ACTIVE_QUESTS, QUEST_COMPLETE_REQUIRED_TO_OFFER
+    from data.quest_config import get_max_slots_for_player, get_slot_cost, QUEST_COMPLETE_REQUIRED_TO_OFFER
     
-    active_or_offered = await PlayerQuest.objects.filter(
+    active_quests = await PlayerQuest.objects.filter(
         player_uid=player.uid,
-        status__in=["active", "offered"]
-    ).count()
+        status="active"
+    ).all()
     
-    if active_or_offered >= MAX_TOTAL_ACTIVE_QUESTS:
+    used_slots = sum(get_slot_cost(q.quest_type) for q in active_quests)
+    max_slots = get_max_slots_for_player(player.level)
+    
+    if used_slots >= max_slots:
         return False
     
-    if active_or_offered >= MAX_TOTAL_ACTIVE_QUESTS - QUEST_COMPLETE_REQUIRED_TO_OFFER:
-        active_only = await PlayerQuest.objects.filter(
+    if used_slots >= max_slots - QUEST_COMPLETE_REQUIRED_TO_OFFER:
+        completed_recent = await PlayerQuest.objects.filter(
             player_uid=player.uid,
-            status="active"
-        ).count()
-        if active_only >= MAX_TOTAL_ACTIVE_QUESTS:
+            status="completed"
+        ).order_by("-completed_at").limit(1).all()
+        
+        if not completed_recent:
             return False
     
     return True
 
 
-async def get_quest_slots_available(player: Player) -> int:
-    """Возвращает количество свободных слотов для квестов"""
-    from data.quest_config import MAX_TOTAL_ACTIVE_QUESTS
+async def get_available_quest_types(player: Player) -> list[str]:
+    """Возвращает типы квестов, которые доступны игроку."""
+    from data.quest_config import QUEST_TYPE_CONFIG, get_slot_cost, get_max_slots_for_player
     
-    active = await PlayerQuest.objects.filter(
+    active_quests = await PlayerQuest.objects.filter(
         player_uid=player.uid,
-        status__in=["active", "offered"]
-    ).count()
+        status="active"
+    ).all()
     
-    return max(0, MAX_TOTAL_ACTIVE_QUESTS - active)
+    used_slots = sum(get_slot_cost(q.quest_type) for q in active_quests)
+    max_slots = get_max_slots_for_player(player.level)
+    
+    available_types = []
+    for quest_type, config in QUEST_TYPE_CONFIG.items():
+        current_of_type = sum(1 for q in active_quests if q.quest_type == quest_type)
+        slot_cost = get_slot_cost(quest_type)
+        
+        if current_of_type < config.max_active and (used_slots + slot_cost) <= max_slots:
+            available_types.append(quest_type)
+    
+    return available_types
+
+
+async def endquest(bot, quest, win: bool = True):
+    """Завершить глобальный квест из старой системы (модель Quest)."""
+    from bot import send_to_players
+    en_status = "✅ Victory!" if win else "❌ Defeat"
+    ru_status = "✅ Победа!" if win else "❌ Провал"
+    text = f"*Global quest completed!* / *Глобальный квест завершён!*\n\n{en_status} / {ru_status}\n\n*{quest.goal}*"
+    try:
+        await send_to_players(bot, text, parse_mode="Markdown")
+    except Exception as e:
+        logging.error(f"Global endquest notification error: {e}")
+    await quest.delete()

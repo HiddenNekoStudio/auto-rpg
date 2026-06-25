@@ -1,12 +1,44 @@
-# Core package
-from core.exceptions import (
-    BotException,
-    PlayerNotFound,
-    InsufficientTokens,
-    LevelTooLow,
-    AdminOnly,
-    RaceNotSelected,
+"""
+core/__init__.py — Core package
+
+Чистая бизнес-логика без зависимостей от Telegram/БД.
+"""
+from .loot import (
+    CONDITIONS,
+    QUALITIES,
+    PREFIXES,
+    SUFFIXES,
+    WEAPONS,
+    SHIELDS,
+    HELMETS,
+    CHESTS,
+    GLOVES,
+    BOOTS,
+    RINGS,
+    AMULETS,
+    SLOTS_DATA,
+    generate_item_data,
+    is_item_better,
+    get_random_slot,
+    is_rare_drop,
 )
-from core.errors import global_error_handler
-from core.shutdown import GracefulShutdown, HealthChecker
-from core.cache import TTLCache, RateLimiter, cached_property
+
+__all__ = [
+    "CONDITIONS",
+    "QUALITIES",
+    "PREFIXES",
+    "SUFFIXES",
+    "WEAPONS",
+    "SHIELDS",
+    "HELMETS",
+    "CHESTS",
+    "GLOVES",
+    "BOOTS",
+    "RINGS",
+    "AMULETS",
+    "SLOTS_DATA",
+    "generate_item_data",
+    "is_item_better",
+    "get_random_slot",
+    "is_rare_drop",
+]

@@ -45,7 +45,7 @@ class StateContext:
         try:
             d = json.loads(data)
             return cls(**d)
-        except:
+        except Exception:
             return cls()
 
 

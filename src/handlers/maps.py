@@ -231,18 +231,19 @@ async def render_viewport_text(cx: int, cy: int, size: int, player=None, lang: s
     return "\n".join(lines)
 
 
-def build_map_keyboard(size: int, current_size: int) -> list:
+def build_map_keyboard(size: int, current_size: int, lang: str = "ru") -> list:
     """Build keyboard with map controls."""
     return [
-        [InlineKeyboardButton(t("map_refresh", "ru"), callback_data="map_refresh")],
+        [InlineKeyboardButton("🔄 Обновить" if lang != "en" else "🔄 Refresh", callback_data="map_refresh")],
     ]
 
 
 async def cmd_maps(update, context):
     """Обработчик команды /maps."""
     player = await Player.objects.get_or_none(uid=update.effective_user.id)
+    lang = lang_from_update(update, player)
     if not player:
-        text = t("not_registered", "ru")
+        text = "Сначала зарегистрируйся: /start" if lang != "en" else "Please register first: /start"
         await update.message.reply_text(text)
         return
 
@@ -253,14 +254,12 @@ async def cmd_maps(update, context):
             size = 20
     else:
         size = 20
-    
-    lang = lang_from_update(update, player)
      
     cx = max(0, min(MAP_SIZE - size, player.x - size // 2))
     cy = max(0, min(MAP_SIZE - size, player.y - size // 2))
 
     loc = find_location(player.x, player.y)
-    keyboard = build_map_keyboard(size, size)
+    keyboard = build_map_keyboard(size, size, lang)
     loc_id = loc.get("id", "") if loc else ""
     
     print(f"DEBUG cmd_maps: player_id={player.uid}, x={player.x}, y={player.y}")
@@ -271,7 +270,8 @@ async def cmd_maps(update, context):
 
     if location_image and loc:
         loc_name = loc.get(f"name_{lang}", loc.get("name_en", "Локация"))
-        caption = f"📍 *{loc_name}*\n\n📌 Координаты: `({player.x}, {player.y})`"
+        _coords = "📌 Координаты" if lang != "en" else "📌 Coords"
+        caption = f"📍 *{loc_name}*\n\n{_coords}: `({player.x}, {player.y})`"
         await update.message.reply_photo(
             photo=location_image,
             caption=caption,
@@ -280,11 +280,13 @@ async def cmd_maps(update, context):
         )
     elif loc:
         loc_name = loc.get(f"name_{lang}", loc.get("name_en", "Локация"))
-        text = f"📍 *{loc_name}*\n📌 Координаты: `({player.x}, {player.y})`"
+        _coords = "📌 Координаты" if lang != "en" else "📌 Coords"
+        text = f"📍 *{loc_name}*\n{_coords}: `({player.x}, {player.y})`"
         await update.message.reply_text(text, parse_mode="Markdown",
                                          reply_markup=InlineKeyboardMarkup(keyboard))
     else:
-        text = f"📍 Позиция: `({player.x}, {player.y})`"
+        _pos = "📍 Позиция" if lang != "en" else "📍 Position"
+        text = f"{_pos}: `({player.x}, {player.y})`"
         await update.message.reply_text(text, parse_mode="Markdown",
                                          reply_markup=InlineKeyboardMarkup(keyboard))
 
@@ -306,7 +308,7 @@ async def callback_maps(update, context):
     cy = max(0, min(MAP_SIZE - size, player.y - size // 2))
 
     loc = find_location(player.x, player.y)
-    keyboard = build_map_keyboard(size, size)
+    keyboard = build_map_keyboard(size, size, lang)
     loc_id = loc.get("id", "") if loc else ""
     
     print(f"DEBUG callback_maps: player_id={player.uid}, x={player.x}, y={player.y}")
@@ -317,7 +319,8 @@ async def callback_maps(update, context):
 
     if location_image and loc:
         loc_name = loc.get(f"name_{lang}", loc.get("name_en", "Локация"))
-        caption = f"📍 *{loc_name}*\n\n📌 Координаты: `({player.x}, {player.y})`"
+        _coords = "📌 Координаты" if lang != "en" else "📌 Coords"
+        caption = f"📍 *{loc_name}*\n\n{_coords}: `({player.x}, {player.y})`"
         try:
             await query.message.reply_photo(
                 photo=location_image,
@@ -329,14 +332,16 @@ async def callback_maps(update, context):
             pass
     elif loc:
         loc_name = loc.get(f"name_{lang}", loc.get("name_en", "Локация"))
-        text = f"📍 *{loc_name}*\n📌 Координаты: `({player.x}, {player.y})`"
+        _coords = "📌 Координаты" if lang != "en" else "📌 Coords"
+        text = f"📍 *{loc_name}*\n{_coords}: `({player.x}, {player.y})`"
         try:
             await query.message.reply_text(text, parse_mode="Markdown",
                                            reply_markup=InlineKeyboardMarkup(keyboard))
         except Exception:
             pass
     else:
-        text = f"📍 Позиция: `({player.x}, {player.y})`"
+        _pos = "📍 Позиция" if lang != "en" else "📍 Position"
+        text = f"{_pos}: `({player.x}, {player.y})`"
         try:
             await query.message.reply_text(text, parse_mode="Markdown",
                                            reply_markup=InlineKeyboardMarkup(keyboard))
@@ -351,7 +356,7 @@ async def send_map_view(query, player, lang: str = "ru"):
     cy = max(0, min(MAP_SIZE - size, player.y - size // 2))
 
     loc = find_location(player.x, player.y)
-    keyboard = build_map_keyboard(size, size)
+    keyboard = build_map_keyboard(size, size, lang)
     loc_id = loc.get("id", "") if loc else ""
     
     print(f"DEBUG send_map_view: player_id={player.uid}, x={player.x}, y={player.y}")
@@ -362,7 +367,8 @@ async def send_map_view(query, player, lang: str = "ru"):
 
     if location_image and loc:
         loc_name = loc.get(f"name_{lang}", loc.get("name_en", "Локация"))
-        caption = f"📍 *{loc_name}*\n\n📌 Координаты: `({player.x}, {player.y})`"
+        _coords = "📌 Координаты" if lang != "en" else "📌 Coords"
+        caption = f"📍 *{loc_name}*\n\n{_coords}: `({player.x}, {player.y})`"
         try:
             await query.message.reply_photo(
                 photo=location_image,
@@ -374,14 +380,16 @@ async def send_map_view(query, player, lang: str = "ru"):
             pass
     elif loc:
         loc_name = loc.get(f"name_{lang}", loc.get("name_en", "Локация"))
-        text = f"📍 *{loc_name}*\n📌 Координаты: `({player.x}, {player.y})`"
+        _coords = "📌 Координаты" if lang != "en" else "📌 Coords"
+        text = f"📍 *{loc_name}*\n{_coords}: `({player.x}, {player.y})`"
         try:
             await query.message.reply_text(text, parse_mode="Markdown",
                                            reply_markup=InlineKeyboardMarkup(keyboard))
         except Exception:
             pass
     else:
-        text = f"📍 Позиция: `({player.x}, {player.y})`"
+        _pos = "📍 Позиция" if lang != "en" else "📍 Position"
+        text = f"{_pos}: `({player.x}, {player.y})`"
         try:
             await query.message.reply_text(text, parse_mode="Markdown",
                                            reply_markup=InlineKeyboardMarkup(keyboard))

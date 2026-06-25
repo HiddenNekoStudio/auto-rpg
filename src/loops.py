@@ -1,10 +1,16 @@
 """
 loops.py — игровые циклы
+
+Содержит основной игровой тик (main_loop), квестовый тик (quest_loop),
+обработку повышения уровня, глобальные события и управление циклами.
 """
 import asyncio
 from datetime import datetime
 import logging
 import random
+import os
+
+logger = logging.getLogger(__name__)
 
 from telegram.ext import Application
 
@@ -12,11 +18,16 @@ import config as cfg
 from db import Player, Quest
 from bot import ctime, send_to_players
 from game.events import randomevent
-from game.monsters import encounter, encounter_all
-from game.challenge import challenge_opp
-from i18n import t
 from data.locations import get_location_coords
 from handlers.quests import get_player_locked_quest
+from core.event_bus import (
+    emit_idle_enter, emit_idle_exit,
+    emit_monster_defeated, emit_gold_changed, emit_global_event
+)
+from core.redis_cache import PlayerState
+
+_use_redis = os.getenv("USE_REDIS", "false").lower() == "true"
+_player_state: PlayerState = None
 
 # Счётчики
 _token_counter        = 0
@@ -24,16 +35,39 @@ _global_event_counter = 0
 _monster_counter      = 0  # для встреч с монстрами каждые 1 час
 _daily_quest_counter = 0  # для ежедневных квестов
 _boss_respawn_counter = 0  # для респауна боссов каждые 4 дня
+_quest_cleanup_counter = 0  # для очистки старых квестов
+_online_time_counter = 0  # для инкремента total_online_seconds каждый tick
+
+
+async def init_player_state():
+    """Инициализировать PlayerState если Redis доступен."""
+    global _player_state
+    if _use_redis:
+        try:
+            _player_state = await PlayerState.get_instance()
+            logging.info("PlayerState initialized with Redis")
+        except Exception as e:
+            logging.warning(f"PlayerState init failed: {e}")
 
 GLOBAL_EVENT_INTERVAL = 5 * 3600  # 5 часов
-DAILY_QUEST_INTERVAL  = 24 * 3600  # 24 часа
-BOSS_RESPAWN_INTERVAL = 4 * 24 * 3600  # 4 дня
+DAILY_QUEST_INTERVAL  = 3600  # 1 час
+BOSS_RESPAWN_INTERVAL = 3600  # 1 час (проверка респавна боссов)
+QUEST_CLEANUP_INTERVAL = 6 * 3600  # каждые 6 часов
 
 
-async def levelup(bot, player: Player):
+async def levelup(bot, player: Player) -> None:
+    """Повышение уровня игрока.
+
+    Начисляет +1 уровень, сбрасывает currentxp,
+    генерирует предмет-награду и шлёт уведомление.
+
+    Args:
+        bot: Экземпляр Telegram Bot.
+        player: Игрок, получивший уровень.
+    """
     from loot import get_item
     from bot import item_string
-    
+
     lang = player.lang or "ru"
     player.level    += 1
     player.currentxp = 0
@@ -43,7 +77,7 @@ async def levelup(bot, player: Player):
     await on_level_reached(player, player.level)
 
     item, slot, replaced = await get_item(player)
-    
+
     footer = (
         f"🎒 {slot} *сильнее* — экипирован!"
         if replaced else
@@ -54,32 +88,43 @@ async def levelup(bot, player: Player):
         text = (
             "*LEVEL UP!*\n\n"
             + player.name + " has reached level *" + str(player.level) + "*!\n"
-            + "Next level in: *" + ctime(player.nextxp) + "*\n\n"
+            + "Next level in: *" + ctime(player.nextxp, lang) + "*\n\n"
             + "🎁 *Reward!*\n"
-            + item_string(item) + "\n"
+            + item_string(item, lang) + "\n"
             + "_" + footer + "_"
         )
     else:
         text = (
             "*ПОВЫШЕНИЕ УРОВНЯ!*\n\n"
             + player.name + " достиг *" + str(player.level) + "* уровня!\n"
-            + "До следующего уровня: *" + ctime(player.nextxp) + "*\n\n"
+            + "До следующего уровня: *" + ctime(player.nextxp, lang) + "*\n\n"
             + "🎁 *Награда!*\n"
-            + item_string(item) + "\n"
+            + item_string(item, lang) + "\n"
             + "_" + footer + "_"
         )
 
-    if player.optin:
-        await send_to_players(bot, text, player_uids=[player.uid])
+    await send_to_players(bot, text, player_uids=[player.uid])
 
 
-async def main_loop(bot):
-    """Основной игровой тик."""
-    global _token_counter, _global_event_counter, _monster_counter, _boss_respawn_counter
+async def main_loop(bot) -> None:
+    """Основной игровой тик — обработка всех активных игроков.
+
+    Каждый тик: оффлайн по таймауту, движение игроков,
+    встречи с боссами, проверка levelup, начисление XP,
+    idle XP для офлайн-игроков, случайные события,
+    PvP на карте, токены за онлайн, глобальные события.
+
+    Args:
+        bot: Экземпляр Telegram Bot.
+    """
+    global _token_counter, _global_event_counter, _monster_counter, _boss_respawn_counter, _quest_cleanup_counter, _online_time_counter
+    tick_number = _monster_counter  # используется passive-скиллами
     _token_counter        += cfg.INTERVAL
     _global_event_counter += cfg.INTERVAL
     _monster_counter      += cfg.INTERVAL
     _boss_respawn_counter += cfg.INTERVAL
+    _quest_cleanup_counter += cfg.INTERVAL
+    _online_time_counter  += cfg.INTERVAL
 
     # ── Оффлайн по таймауту ──────────────────────
     now   = int(datetime.today().timestamp())
@@ -93,8 +138,13 @@ async def main_loop(bot):
     
     if went_offline:
         for p in went_offline:
+            p.last_online_at = 0
+            p.last_idle_at = now
             p.online = False
-        await Player.objects.bulk_update(went_offline, columns=["online"])
+            p.idle_since = now
+            p.idle_xp = 0
+            await p.update(_columns=["online", "idle_since", "idle_xp",
+                                      "last_online_at", "last_idle_at"])
         logging.info("Ушли оффлайн (таймаут): %s", [p.name for p in went_offline])
         for p in went_offline:
             mins = cfg.OFFLINE_TIMEOUT // 60
@@ -110,14 +160,69 @@ async def main_loop(bot):
             )
             await send_to_players(bot, msg, player_uids=[p.uid])
 
+    # ── Plugin game tick ─────────────────────────
+    # Вызываем ДО проверки игроков, чтобы работал даже без активных игроков
+    from plugins.registry import PluginRegistry
+    await PluginRegistry.trigger_game_tick(tick_number, bot)
+
+    from health import track_tick
+    track_tick(0)
+
+    # ── Idle Mode: начисление XP офлайн-игрокам ───────────────────
+    # Выполняется ДО проверки онлайн-игроков — чтобы работало даже когда все офлайн
+    idle_players = await Player.objects.filter(
+        online=False,
+        idle_since__gt=0
+    ).all()
+
+    if idle_players:
+        FULL_DAY = 86400
+        track_tick(len(idle_players))
+
+        for p in idle_players:
+            elapsed = now - p.idle_since
+            rate = cfg.IDLE_XP_RATE_EXTENDED if elapsed > FULL_DAY else cfg.IDLE_XP_RATE
+            idle_gain = max(1, int(cfg.INTERVAL * rate))
+
+            from game.races import get_race_xp_mult
+            idle_gain = int(idle_gain * get_race_xp_mult(p.race))
+
+            from plugins.vip_shop import has_prestige_xp_bonus, get_prestige_xp_multiplier
+            if has_prestige_xp_bonus(p):
+                idle_gain = int(idle_gain * get_prestige_xp_multiplier(p))
+
+            p.hp = min(p.max_hp, p.hp + max(1, int(p.max_hp * cfg.HP_REGEN_IDLE_PCT)))
+            p.mp = min(p.max_mp, p.mp + max(1, int(p.max_mp * cfg.MP_REGEN_IDLE_PCT)))
+
+            if (tick_number // cfg.INTERVAL) % (cfg.STREAK_DECAY_INTERVAL // cfg.INTERVAL) == 0:
+                streak = p.fight_streak or 0
+                if streak > 0:
+                    p.fight_streak = streak - 1
+
+            p.idle_xp += idle_gain
+            p.total_idle_seconds += cfg.INTERVAL
+
+            if _use_redis and _player_state and _player_state._client:
+                try:
+                    await _player_state.set_idle_state(p.uid, p.idle_since, p.idle_xp)
+                    await p.update(_columns=["idle_xp", "hp", "mp", "fight_streak", "total_idle_seconds"])
+                except Exception:
+                    logging.warning("Redis idle save failed, falling back to PG: uid=%s", p.uid)
+                    await p.update(_columns=["idle_xp", "hp", "mp", "fight_streak", "total_idle_seconds"])
+            else:
+                await p.update(_columns=["idle_xp", "hp", "mp", "fight_streak", "total_idle_seconds"])
+            logging.info("Idle XP сохранён: uid=%s elapsed=%s xp=%s",
+                p.uid, elapsed, p.idle_xp)
+
     # ── Основной список онлайн-игроков ────────────
-    # Один запрос вместо двух — используем оптимизированный метод
     players = await Player.get_active_players()
     if not players:
         return
 
     for player in players:
         locked_quest = await get_player_locked_quest(player)
+        passives_changed = False
+        old_x, old_y = player.x, player.y
         
         if locked_quest:
             target_loc_id = locked_quest.target_location_id
@@ -143,7 +248,6 @@ async def main_loop(bot):
                         player.x = random.randint(player.x - 3, player.x + 5) % cfg.MAP_SIZE[0]
                         player.y = random.randint(player.y - 3, player.y + 5) % cfg.MAP_SIZE[1]
         else:
-            old_x, old_y = player.x, player.y
             move_roll = random.random()
             if move_roll < 0.7:
                 player.x = random.randint(player.x - 1, player.x + 1) % cfg.MAP_SIZE[0]
@@ -170,7 +274,7 @@ async def main_loop(bot):
             try:
                 if player.state_context:
                     state_ctx = json_module.loads(player.state_context) if isinstance(player.state_context, str) else player.state_context
-            except:
+            except (json_module.JSONDecodeError, TypeError, ValueError):
                 state_ctx = {}
 
             boss, zone_type = await get_boss_at(player.x, player.y)
@@ -179,22 +283,27 @@ async def main_loop(bot):
                 last_boss_x = state_ctx.get("last_boss_x", 0)
                 last_boss_y = state_ctx.get("last_boss_y", 0)
                 boss_respawn = getattr(boss, 'respawn_available', 0) or 0
-                now = int(time.time())
+                now_ts = int(time.time())
 
-                # Проверяем: новый босс ИЛИ игрок вернулся после ухода
                 distance_from_cached = abs(player.x - last_boss_x) + abs(player.y - last_boss_y)
                 should_trigger = (
-                    last_boss_id != boss.boss_id or  # Новый босс
-                    distance_from_cached > 150  # Вернулся после ухода далеко
+                    last_boss_id != boss.boss_id or
+                    distance_from_cached > cfg.BOSS_MIN_DISTANCE
                 )
 
                 if should_trigger:
                     lang = player.lang or "ru"
-                    await send_boss_encounter_alert(bot, player, boss, zone_type, lang)
-                    if zone_type == "auto":
+                    alert_sent = await send_boss_encounter_alert(bot, player, boss, zone_type, lang)
+                    
+                    if alert_sent and zone_type == "auto":
                         await resolve_battle(bot, player, boss, forced=True, lang=lang)
 
-                    # Сохраняем ID и позицию босса
+                    # reload state_ctx чтобы подхватить кулдауны сохранённые send_boss_encounter_alert / resolve_battle
+                    try:
+                        state_ctx = json_module.loads(player.state_context) if isinstance(player.state_context, str) else player.state_context
+                    except (json_module.JSONDecodeError, TypeError, ValueError):
+                        pass
+
                     state_ctx["last_boss_id"] = boss.boss_id
                     state_ctx["last_boss_x"] = boss.x
                     state_ctx["last_boss_y"] = boss.y
@@ -202,15 +311,14 @@ async def main_loop(bot):
                     player.state_context = json_module.dumps(state_ctx)
                     await player.update(_columns=["state_context"])
                 elif boss_respawn and boss_respawn > now:
-                    pass  # Босс ещё не вернулся
+                    pass
 
-            # СБРОС last_boss_id когда игрок далеко от последнего босса (> 150 пикселей)
             last_boss_id = state_ctx.get("last_boss_id")
             last_boss_x = state_ctx.get("last_boss_x", 0)
             last_boss_y = state_ctx.get("last_boss_y", 0)
             if last_boss_id:
                 dist = abs(player.x - last_boss_x) + abs(player.y - last_boss_y)
-                if dist > 150:
+                if dist > cfg.BOSS_MIN_DISTANCE:
                     state_ctx.pop("last_boss_id", None)
                     state_ctx.pop("last_boss_x", None)
                     state_ctx.pop("last_boss_y", None)
@@ -221,21 +329,49 @@ async def main_loop(bot):
         if player.currentxp >= player.nextxp:
             await levelup(bot, player)
 
-        # Эльф: +10% к скорости прокачки (начисляем чуть больше XP)
-        xp_gain = int(cfg.INTERVAL * 1.1) if player.race == "elf" else cfg.INTERVAL
+        from game.races import get_race_xp_mult
+        xp_gain = max(1, int(cfg.INTERVAL * get_race_xp_mult(player.race) + 0.5))
+        
+        # VIP буст XP
+        from plugins.vip_shop import get_xp_multiplier
+        xp_mult = get_xp_multiplier(player)
+        xp_gain = int(xp_gain * xp_mult)
+        
+        # Prestige бонус XP
+        from plugins.vip_shop import has_prestige_xp_bonus, get_prestige_xp_multiplier
+        if has_prestige_xp_bonus(player):
+            prestige_mult = get_prestige_xp_multiplier(player)
+            xp_gain = int(xp_gain * prestige_mult)
+        
         player.currentxp += xp_gain
-        player.totalxp   += cfg.INTERVAL  # totalxp считает реальное время
+        player.totalxp += cfg.INTERVAL  # totalxp считает реальное время
+        
+        # Базовая регенерация HP/MP (каждый тик)
+        hp_regen = max(1, int(player.max_hp * cfg.HP_REGEN_PCT))
+        player.hp = min(player.max_hp, player.hp + hp_regen)
+        mp_regen = max(1, int(player.max_mp * cfg.MP_REGEN_PCT))
+        player.mp = min(player.max_mp, player.mp + mp_regen)
+
+        # Пассивки ON_TICK (регенерация итд — применяют хилл внутри)
+        from game.skills.passives.registry import PassiveSkillRegistry
+        regen_res = await PassiveSkillRegistry.trigger_on_tick(player, tick_number)
+        if regen_res.triggered and regen_res.healing > 0:
+            passives_changed = True
+
+        # Стамина: уменьшаем fight_streak раз в 5 минут
+        if (tick_number // cfg.INTERVAL) % (cfg.STREAK_DECAY_INTERVAL // cfg.INTERVAL) == 0:
+            streak = player.fight_streak or 0
+            if streak > 0:
+                player.fight_streak = streak - 1
+
+
 
     # Случайное событие (вероятностное)
-    if random.randint(1, 4 * 86400) / cfg.INTERVAL < len(players):
+    if random.random() < len(players) * cfg.INTERVAL / (4 * 86400):
         await randomevent(bot, random.choice(players))
 
-    # ── Встреча с монстром: каждые MONSTER_INTERVAL сек для ВСЕХ онлайн ──
-    if _monster_counter >= cfg.MONSTER_INTERVAL:
-        _monster_counter = 0
-        if players:
-            await encounter_all(bot, players)
-            logging.info("Встреча с монстром: %d игроков", len(players))
+    # ── Встреча с монстрами: теперь обрабатывается плагином monster_encounters ──
+    # (старый код перенесён в plugins/monsters.py)
 
     # ── Респаун боссов: каждые 4 дня ──────────────────────
     if _boss_respawn_counter >= BOSS_RESPAWN_INTERVAL:
@@ -265,21 +401,35 @@ async def main_loop(bot):
 
     # Batch update — лимит 100 записей
     BATCH_SIZE = 100
+    batch_cols = ["level", "nextxp", "totalxplost", "currentxp", "totalxp",
+                  "wins", "loss", "x", "y", "hp", "mp", "fight_streak"]
     for i in range(0, len(players), BATCH_SIZE):
         batch = players[i:i + BATCH_SIZE]
-        await Player.objects.bulk_update(
-            batch,
-            columns=["level", "nextxp", "totalxplost", "currentxp", "totalxp",
-                     "wins", "loss", "x", "y"],
-        )
+        try:
+            await Player.objects.bulk_update(batch, columns=batch_cols)
+        except Exception as e:
+            logging.warning("bulk_update failed (non-fatal): %s", e)
 
     # ── Токены за время онлайна ───────────────────
     if _token_counter >= cfg.TOKEN_TIME:
         _token_counter = 0
         for p in players:
             p.tokens += 1
-        await Player.objects.bulk_update(players, columns=["tokens"])
-        logging.info("Токены выданы %d игрокам", len(players))
+        try:
+            await Player.objects.bulk_update(players, columns=["tokens"])
+            logging.info("Токены выданы %d игрокам", len(players))
+        except Exception as e:
+            logging.warning("token bulk_update failed (non-fatal): %s", e)
+
+    # ── Аккумуляция total_online_seconds каждый tick ─────
+    if _online_time_counter >= cfg.INTERVAL:
+        _online_time_counter = 0
+        for p in players:
+            p.total_online_seconds = (p.total_online_seconds or 0) + cfg.INTERVAL
+        try:
+            await Player.objects.bulk_update(players, columns=["total_online_seconds"])
+        except Exception as e:
+            logging.warning("online_time bulk_update failed (non-fatal): %s", e)
 
     # ── Глобальное событие каждые 5 часов ────────
     if _global_event_counter >= GLOBAL_EVENT_INTERVAL:
@@ -289,16 +439,31 @@ async def main_loop(bot):
             logging.info("Глобальное событие для %d игроков", len(players))
 
 
-async def quest_loop(bot):
-    """Тик квестов."""
+async def quest_loop(bot) -> None:
+    """Тик квестов — генерация ежедневных квестов и обновление прогресса.
+
+    Каждый тик: проверка интервала для генерации daily-квестов,
+    начисление XP активному глобальному квесту, очистка старых квестов.
+
+    Args:
+        bot: Экземпляр Telegram Bot.
+    """
     from ormar.exceptions import NoMatch
-    global _daily_quest_counter
+    global _daily_quest_counter, _quest_cleanup_counter
     
     _daily_quest_counter += cfg.INTERVAL
     if _daily_quest_counter >= DAILY_QUEST_INTERVAL:
         _daily_quest_counter = 0
-        await generate_daily_quests(bot)
-        logging.info("Ежедневные квесты обновлены")
+        try:
+            await generate_daily_quests(bot)
+        except Exception as e:
+            # Проверяем по тексту ошибки — ormar может не иметь DatabaseError
+            err_msg = str(e).lower()
+            if "database" in err_msg or "connection" in err_msg or "sqlite" in err_msg or "postgresql" in err_msg:
+                logger.error(f"Daily quest generation failed (DB unavailable): {e}")
+                _daily_quest_counter = DAILY_QUEST_INTERVAL - cfg.INTERVAL
+            else:
+                logger.error(f"Daily quest generation failed: {e}")
     
     try:
         quest = await Quest.objects.get()
@@ -315,24 +480,51 @@ async def quest_loop(bot):
         elif quest.deadline < int(datetime.today().timestamp()):
             from game.quests import endquest
             await endquest(bot, quest, win=False)
-    except Exception:
+    except NoMatch:
+        # Нет активного квеста — нормально
         pass
+    except Exception as e:
+        err_msg = str(e).lower()
+        if "database" in err_msg or "connection" in err_msg or "sqlite" in err_msg or "postgresql" in err_msg:
+            logger.error(f"Quest fetch failed (DB unavailable): {e}")
+        else:
+            logger.warning(f"Quest loop error: {e}")
+
+    # ── Очистка старых квестов ──────────────────────
+    if _quest_cleanup_counter >= QUEST_CLEANUP_INTERVAL:
+        _quest_cleanup_counter = 0
+        try:
+            from game.quests import cleanup_expired_offers, cleanup_old_completed_quests
+            await cleanup_expired_offers()
+            await cleanup_old_completed_quests(days=7)
+        except Exception as e:
+            logger.warning(f"Quest cleanup error: {e}")
 
 
-async def generate_daily_quests(bot):
-    """Генерация ежедневных квестов для всех игроков (новая система)."""
+async def generate_daily_quests(bot) -> None:
+    """Генерация ежедневных квестов для всех онлайн-игроков.
+
+    Для каждого игрока выбирает доступные типы квестов
+    (daily, periodic, collection, trade) с учётом лимита
+    активных квестов каждого типа.
+
+    Args:
+        bot: Экземпляр Telegram Bot.
+    """
+    import random
     from db import PlayerQuest
     from handlers.quests import offer_quest
     from game.quests import can_offer_new_quests, get_quest_slots_available
+    from data.quest_config import QUEST_TYPE_CONFIG
 
-    players = await Player.objects.all()
+    players = await Player.get_active_players()
 
     if not players:
         return
 
+    DAILY_QUEST_TYPES = ["kill", "explore", "xp", "duel", "boss", "rare"]
+
     for player in players:
-        if not player.online:
-            continue
 
         if not await can_offer_new_quests(player):
             continue
@@ -340,11 +532,35 @@ async def generate_daily_quests(bot):
         if await get_quest_slots_available(player) <= 0:
             continue
 
-        await offer_quest(bot, player, quest_type="daily", location=None)
+        available_types = []
+        for qtype in DAILY_QUEST_TYPES:
+            config = QUEST_TYPE_CONFIG.get(qtype)
+            if config:
+                current_count = await PlayerQuest.objects.filter(
+                    player_uid=player.uid,
+                    quest_type=qtype,
+                    status="active"
+                ).count()
+                if current_count < config.max_active:
+                    available_types.append(qtype)
+
+        if not available_types:
+            continue
+
+        quest_type = random.choice(available_types)
+        await offer_quest(bot, player, quest_type=quest_type, location=None)
 
 
-async def global_event(bot, players: list):
-    """Глобальное случайное событие — бонус или штраф для всех онлайн."""
+async def global_event(bot, players: list) -> None:
+    """Глобальное случайное событие — бонус или штраф для всех онлайн.
+
+    Выбирает случайный тип (bonus/penalty) и применяет
+    процентную прибавку/скидку к nextxp всех активных игроков.
+
+    Args:
+        bot: Экземпляр Telegram Bot.
+        players: Список активных игроков.
+    """
     event_type = random.choice(["bonus", "penalty"])
     pct    = random.randint(3, 8)
     factor = (100 - pct) / 100 if event_type == "bonus" else (100 + pct) / 100
@@ -353,6 +569,7 @@ async def global_event(bot, players: list):
         p.nextxp = max(p.currentxp + 1, int(p.nextxp * factor))
     await Player.objects.bulk_update(players, columns=["nextxp"])
 
+    event_messages = []
     for p in players:
         lang = p.lang or "ru"
         if event_type == "bonus":
@@ -361,23 +578,41 @@ async def global_event(bot, players: list):
             ev = ("A dark omen! *+" + str(pct) + "% to next level time.*") if lang == "en" else ("Тёмное предзнаменование! *+" + str(pct) + "% ко времени до след. уровня.*")
 
         msg = ("⚡ *World Event!*\n\n" + ev) if lang == "en" else ("⚡ *Мировое событие!*\n\n" + ev)
-        await send_to_players(bot, msg, player_uids=[p.uid])
+        event_messages.append((p.uid, msg))
+
+    await emit_global_event(event_type, "global", [p.uid for p in players])
+
+    for uid, msg in event_messages:
+        await send_to_players(bot, msg, player_uids=[uid])
 
 
-async def run_loops(app: Application):
-    """Запускает все игровые циклы."""
+async def run_loops(app: Application) -> None:
+    """Запускает все игровые циклы в бесконечном loop.
+
+    Поочерёдно выполняет main_loop и quest_loop
+    с паузой cfg.INTERVAL между итерациями.
+
+    Args:
+        app: Экземпляр Application Telegram Bot.
+    """
     bot = app.bot
     while True:
         try:
             await main_loop(bot)
         except Exception as e:
-            logging.error("main_loop error: %s", e)
+            logging.error("main_loop error: %s", e, exc_info=True)
         try:
             await quest_loop(bot)
         except Exception as e:
-            logging.error("quest_loop error: %s", e)
+            logging.error("quest_loop error: %s", e, exc_info=True)
         await asyncio.sleep(cfg.INTERVAL)
 
 
-async def start_loops(app: Application):
+async def start_loops(app: Application) -> None:
+    """Запускает игровые циклы в фоновой задаче.
+
+    Args:
+        app: Экземпляр Application Telegram Bot.
+    """
+    await init_player_state()
     asyncio.create_task(run_loops(app))

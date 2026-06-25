@@ -25,6 +25,7 @@ STRINGS = {
         "btn_settings":     "⚙️ Настройки",
         "btn_top":          "🏆 Топ",
         "btn_info":         "ℹ️ О игре",
+        "btn_shop":        "🪙 Token Магазин",
 
         # Профиль
         "profile_title":    "👤 *Профиль: {name}* {status}\n━━━━━━━━━━━━━━━━━━",
@@ -34,9 +35,11 @@ STRINGS = {
         "profile_gold":     "💰 Золото: *{gold}*",
         "profile_xp":       "⚡ XP: *{xp}*",
         "profile_tokens":   "🎫 Токены: *{tokens}*",
+        "profile_prestige": "⭐ Prestige: x{prestige_count} Lv.{prestige_level} (+{bonus_percent}%) → {bonus_type}",
         "profile_nextlvl":  "⏱️ До след. уровня: *{time}*",
         "profile_total":    "🕐 Всего в игре: *{time}*",
         "profile_duels":    "⚔️ Дуэли: {wins}П / {loss}П",
+        "profile_monsters": "🐾 Монстры:",
         "profile_pos":      "📍 Позиция: ({x}, {y})",
         "map_title":        "🗺️ *Карта — Вид {cx},{cy}*",
         "map_nearby":       "📍 Игроки поблизости:",
@@ -47,7 +50,40 @@ STRINGS = {
         "quest_active":    "Квест: {goal}",
         "profile_status":   "{quest} | Уведомления: {alert}",
         "profile_gear":     "🎒 *Снаряжение:*",
-        "btn_loot":         "🎁 Использовать лут",
+        "btn_loot":         "🏪 Магазин",
+
+        # Магазин
+        "shop_title":       "🏪 *МАГАЗИН*\n\n💰 Твоё золото: *{gold}*\n\nВыбери сундук:",
+        "shop_chest_small":   "Маленький",
+        "shop_chest_medium": "Средний",
+        "shop_chest_big":    "Большой",
+        "shop_chest_legendary": "Легендарный",
+        "shop_bought":     "🎁 *{name} купил {chest}!*\n\n💰 Потрачено: {price} золота\n\nПолучено:\n",
+        "shop_not_enough_gold": "Недостаточно золота!",
+        "shop_again":      "🔄 Ещё раз",
+        "shop_menu":       "🏪 Магазин",
+
+        # VIP Магазин
+        "vip_title":      "🪙 *TOKEN МАГАЗИН*\n\n🎫 Твои токены: *{tokens}*\n\nВыбери товар:",
+        "vip_item_xp_boost":  "XP Boost",
+        "vip_item_speed_boost": "Speed Boost",
+        "vip_item_protect":    "Protect",
+        "vip_item_prestige":   "Prestige",
+        "vip_bought":     "🪙 *{name} приобрёл товар!*\n\n🎫 Потрачено: {price} токенов\n\n",
+        "vip_not_enough_tokens": "Недостаточно токенов!",
+        "vip_again":     "🔄 Ещё раз",
+        "vip_menu":      "🪙 Token Магазин",
+        "vip_bought_xp_boost": "⚡ *{name} активировал XP Boost!*\n\n⏱️ Действует: {duration} минут\n\n🎯 XP удваивается!",
+        "vip_bought_speed_boost": "🏃 *{name} активировал Speed Boost!*\n\n⏱️ Действует: {duration} минут\n\n⚡ Скорость удваивается!",
+        "vip_bought_protect": "🛡️ *{name} активировал Protect!*\n\n⏱️ Действует: {duration} минут\n\n🛡️ Защита от штрафов!",
+        "vip_bought_prestige": "✨ *PRESTIGE!*\n\n*{name} начинает заново!\n\n📉 Старый уровень: {old_level}\n📈 Новый уровень: {new_level}\n⭐ Prestige: x{prestige_count}",
+        "vip_prestige_start": "✨ *PRESTIGE!*\n\n*{name} начинает заново!\n\n📉 Старый уровень: {old_level}\n📈 Всего prestige: x{prestige_count}\n\n🎯 Текущий prestige_level: {prestige_level}\n💎 Бонус: +{bonus_percent}%\n\nВыбери бонус:",
+        "vip_prestige_change_menu": "🔄 *Смена бонуса prestige*\n\n🎯 prestige_level: {prestige_level}\n💎 Бонус: +{bonus_percent}%\n\nВыбери бонус:",
+        "vip_prestige_selected_xp": "✅ *Бонус выбран!*\n\n*{name} получает:\n• ⚡ XP +{bonus_percent}%\n⭐ Prestige: x{prestige_count}",
+        "vip_prestige_selected_gold": "✅ *Бонус выбран!*\n\n*{name} получает:\n• 💰 Gold +{bonus_percent}%\n⭐ Prestige: x{prestige_count}",
+        "vip_prestige_change": "🔄 Сменить бонус",
+        "vip_item_auto_quest":   "Auto Quests",
+        "vip_bought_auto_quest": "🤖 *{name} купил авто-приём квестов!*\n\n✅ Теперь квесты принимаются автоматически!",
 
         # Мировоззрение
         "align_good":       "😇 Добрый",
@@ -57,6 +93,16 @@ STRINGS = {
         "not_on_quest":     "🏠 Не на квесте",
         "online":           "🟢 Онлайн",
         "offline":          "🔴 Оффлайн",
+        "idle":             "💤 Idle",
+        "idle_return":      "🌙 *С возвращением, {name}!*\n\n"
+                            "💤 Ты был в Idle режиме: *{duration}*\n"
+                            "⚡ Получено XP: *+{xp}*\n\n"
+                            "🎖️ Уровень: *{level}*\n"
+                            "⏱️ До след. уровня: *{next}*",
+        "idle_return_no_xp": "🌙 *С возвращением, {name}!*\n\n"
+                            "💤 Ты был в Idle режиме: *{duration}*\n"
+                            "⏸️ XP не накопилось\n\n"
+                            "💡 Нажми /profile для просмотра статуса",
         "notif_on":         "🔔 ВКЛ",
         "notif_off":        "🔕 ВЫКЛ",
 
@@ -91,6 +137,9 @@ STRINGS = {
         "autoquest_silent":  "🔕 Тихий",
         "autoquest_notify": "🔔 С уведомлением",
         "profile_autoquest": "Авто-квесты: {icon} {mode}",
+        "auto_quest_locked":  "🔒 *Авто-приём квестов*\n\nКупи за *5* 🪙 Token, чтобы автоматически принимать квесты.",
+        "auto_quest_buy":     "💎 Купить за 5 🪙",
+        "auto_quest_bought":  "✅ Куплено!",
         "quest_accepted":   "✅ Квест принят!",
 
         # Квест
@@ -108,10 +157,13 @@ STRINGS = {
         "location_quest_decline":   "❌ Квест отклонён",
         "location_quest_progress":  "🎯 *Прогресс квеста:*\n\n*{title}*\n\n📍 {location}\n\n⏳ Прогресс: {progress}/{target}\n\n🎁 Награда: XP +{xp} | Золото +{gold}",
         "location_quest_complete":  "✅ *Квест выполнен!*\n\n*{title}*\n\n🎁 Награда получена:\n• XP: +{xp}\n• Золото: +{gold}",
-        "quest_daily_title":    "📅 *Ежедневные к��есты*",
+        "quest_daily_title":    "📅 *Ежедневные квесты*",
         "quest_daily_complete":  "✅ Ежедневные квесты обновлены!",
         "quest_my_quests":      "🎯 *Мои квесты*",
         "quest_no_quests":      "У тебя нет активных квестов.",
+        "quest_location_locked":"🔒 *Место выполнения:* {location}",
+        "quest_blocked_info":   "⛔ Ты заблокирован в этой локации до выполнения квеста!",
+        "quest_unlocked":       "🔓 Квест выполнен! Блокировка снята.",
 
         # Топ
         "top_title":        "🏆 *Топ 10 игроков*",
@@ -126,9 +178,14 @@ STRINGS = {
 
         # Инфо
         "info_title":       "ℹ️ *{game} v{version}*",
-        "info_about":       "Idle RPG для Telegram — просто будь онлайн и следи за приключениями своего героя!\n\nУровни растут автоматически, случайные события, монстры, дуэли и квесты — всё без участия игрока.",
+        "info_about":       "🎮 *Что это за игра?*\nЭто Idle RPG в Telegram — твой герой живёт и приключается автоматически, пока ты онлайн.\n\n⚡ *Как играть?*\n1. Запусти /start и зарегистрируйся\n2. Выбери расу (Человек/Гном/Эльф)\n3. Просто будь онлайн — персонаж сам фармит опыт\n4. После 10 уровня откроется /setjob\n5. Следи за событиями и собирай снаряжение\n\n🔥 *Возможности:*\n• 🎖️ Система уровней и престижа\n• ⚔️ Автоматические бои с монстрами\n• 🤺 Дуэли с другими игроками\n• 👹 Боссы на карте\n• 🗺️ Карта мира с локациями\n• 🎒 8 слотов снаряжения\n• 🎯 Пассивные навыки\n• ⚖️ Мировоззрение (Добро/Нейтрал/Зло)\n• 💼 Система классов\n• 📋 Квесты с наградами\n• 🏪 Магазин за золото\n• 🎫 Token VIP магазин\n• ⭐ Star Shop (покупка токенов)",
         "info_updates":     "📋 *Последние обновления:*",
-        "info_commands":    "💬 *Команды:*\n/start — главное меню\n/profile — профиль\n/pull — лут\n/top — таблица лидеров\n/quest — текущий квест\n/setjob — сменить класс (10+ ур.)\n/align — мировоззрение",
+        "info_commands":    "💬 *Команды:*\n/start — Главное меню\n/profile — Твой профиль\n/quest — Квесты\n/passives — Пассивные навыки\n/bosses — Список боссов\n/setjob — Сменить класс (10+ ур.)\n/align — Мировоззрение\n/alert — Уведомления вкл/выкл\n/help — Список команд\n/starshop — Star Магазин",
+
+        # Классы
+        "choose_class":     "💼 *Выбери класс:*\n\n╔══════════════════════════════╗\n║ ⚔️ *Воин*     — +10% DPS    ║\n║ 🏹 *Лучник*   — +10% крит   ║\n║ 🔮 *Маг*      — +15% XP     ║\n║ 🗡️ *Разбойник* — +15% уклон ║\n║ 🛡️ *Паладин*  — +15% защита ║\n╚══════════════════════════════╝",
+        "class_set":        "✅ Класс выбран: *{class_name}*",
+        "class_changed":    "🔄 Класс сменён: *{class_name}*",
 
         # Расы
         "choose_race":      "⚔️ *Выбери расу своего героя:*\n\n👤 *Человек* — 🍀 20% шанс избежать штрафа от монстра\n⛏️ *Гном* — 🛡️ +15% к боевой силе\n🌿 *Эльф* — 🏹 +10% к бонусу при победе над монстром",
@@ -148,6 +205,20 @@ STRINGS = {
         "boss_list_title": "🏰 *Список боссов:*",
         "btn_bosses": "👹 Боссы",
         "btn_maps": "🗺️ Карта",
+
+        # Stars Shop
+        "starshop_title":    "⭐ *STAR МАГАЗИН*\n\n🎫 Курс: 1 токен = {rate}⭐\n📦 Максимум: {max_tokens} токенов за раз\n\nВыберите количество токенов:",
+        "starshop_confirm":  "⭐ *Подтверждение покупки*\n\n🎫 Токены: *{tokens}*\n💰 Цена: *{stars}⭐*\n\nНажмите кнопку ниже для оплаты.",
+        "starshop_bought":   "✅ *Покупка успешна!*\n\n🎫 Получено: *{tokens}* токенов\n🎫 Всего токенов: *{total_tokens}*",
+        "starshop_limit":    "Максимум {max} токенов за раз!",
+        "starshop_error":   "❌ Произошла ошибка. Обратитесь к администратору.",
+
+        # Пассивные навыки
+        "passive_upgrade":      "⬆ Улучшить",
+        "passive_upgrade_cost": "Цена: {cost}💰",
+        "passive_max_level":    "⭐ МАКСИМАЛЬНЫЙ УРОВЕНЬ",
+        "passive_not_enough_gold": "Недостаточно золота! Нужно {cost}💰, у тебя {gold}💰",
+        "passive_upgraded":     "⬆ {icon} {name} Ур.{level}!",
     },
 
     "en": {
@@ -172,6 +243,7 @@ STRINGS = {
         "btn_settings":     "⚙️ Settings",
         "btn_top":          "🏆 Top",
         "btn_info":         "ℹ️ About",
+        "btn_shop":        "🏪 Shop",
 
         # Profile
         "profile_title":    "👤 *Profile: {name}* {status}\n━━━━━━━━━━━━━━━━━━",
@@ -181,9 +253,11 @@ STRINGS = {
         "profile_gold":    "💰 Gold: *{gold}*",
         "profile_xp":      "⚡ XP: *{xp}*",
         "profile_tokens":   "🎫 Tokens: *{tokens}*",
+        "profile_prestige": "⭐ Prestige: x{prestige_count} Lv.{prestige_level} (+{bonus_percent}%) → {bonus_type}",
         "profile_nextlvl":  "⏱️ Next level in: *{time}*",
         "profile_total":    "🕐 Total playtime: *{time}*",
         "profile_duels":    "⚔️ Duels: {wins}W / {loss}L",
+        "profile_monsters": "🐾 Monsters:",
         "profile_pos":      "📍 Position: ({x}, {y})",
         "map_title":        "🗺️ *Map — View {cx},{cy}*",
         "map_nearby":       "📍 Nearby players:",
@@ -194,7 +268,40 @@ STRINGS = {
         "quest_active":    "Quest: {goal}",
         "profile_status":   "{quest} | Notifications: {alert}",
         "profile_gear":     "🎒 *Equipment:*",
-        "btn_loot":         "🎁 Use loot",
+        "btn_loot":         "🏪 Shop",
+
+        # Shop
+        "shop_title":       "🏪 *SHOP*\n\n💰 Your gold: *{gold}*\n\nChoose chest:",
+        "shop_chest_small":   "Small",
+        "shop_chest_medium": "Medium",
+        "shop_chest_big":    "Big",
+        "shop_chest_legendary": "Legendary",
+        "shop_bought":     "🎁 *{name} bought {chest}!*\n\n💰 Spent: {price} gold\n\nReceived:\n",
+        "shop_not_enough_gold": "Not enough gold!",
+        "shop_again":      "🔄 Again",
+        "shop_menu":       "🏪 Shop",
+
+        # VIP Shop
+        "vip_title":      "🪙 *TOKEN SHOP*\n\n🎫 Your tokens: *{tokens}*\n\nChoose item:",
+        "vip_item_xp_boost":  "XP Boost",
+        "vip_item_speed_boost": "Speed Boost",
+        "vip_item_protect":    "Protect",
+        "vip_item_prestige":   "Prestige",
+        "vip_bought":     "🪙 *{name} purchased item!*\n\n🎫 Spent: {price} tokens\n\n",
+        "vip_not_enough_tokens": "Not enough tokens!",
+        "vip_again":     "🔄 Again",
+        "vip_menu":      "🪙 Token Shop",
+        "vip_bought_xp_boost": "⚡ *{name} activated XP Boost!*\n\n⏱️ Duration: {duration} minutes\n\n🎯 XP doubled!",
+        "vip_bought_speed_boost": "🏃 *{name} activated Speed Boost!*\n\n⏱️ Duration: {duration} minutes\n\n⚡ Speed doubled!",
+        "vip_bought_protect": "🛡️ *{name} activated Protect!*\n\n⏱️ Duration: {duration} minutes\n\n🛡️ Protected from penalties!",
+        "vip_bought_prestige": "✨ *PRESTIGE!*\n\n*{name} starts anew!\n\n📉 Old level: {old_level}\n📈 New level: {new_level}\n⭐ Prestige: x{prestige_count}",
+        "vip_prestige_start": "✨ *PRESTIGE!*\n\n*{name} starts anew!\n\n📉 Old level: {old_level}\n⭐ Total prestige: x{prestige_count}\n\n🎯 Current prestige_level: {prestige_level}\n💎 Bonus: +{bonus_percent}%\n\nChoose bonus:",
+        "vip_prestige_change_menu": "🔄 *Change prestige bonus*\n\n🎯 prestige_level: {prestige_level}\n💎 Bonus: +{bonus_percent}%\n\nChoose bonus:",
+        "vip_prestige_selected_xp": "✅ *Bonus selected!*\n\n*{name} gains:\n• ⚡ XP +{bonus_percent}%\n⭐ Prestige: x{prestige_count}",
+        "vip_prestige_selected_gold": "✅ *Bonus selected!*\n\n*{name} gains:\n• 💰 Gold +{bonus_percent}%\n⭐ Prestige: x{prestige_count}",
+        "vip_prestige_change": "🔄 Change bonus",
+        "vip_item_auto_quest":   "Auto Quests",
+        "vip_bought_auto_quest": "🤖 *{name} bought Auto-Accept Quests!*\n\n✅ Quests will be accepted automatically!",
 
         # Alignment
         "align_good":       "😇 Good",
@@ -204,6 +311,16 @@ STRINGS = {
         "not_on_quest":     "🏠 Not on quest",
         "online":           "🟢 Online",
         "offline":          "🔴 Offline",
+        "idle":             "💤 Idle",
+        "idle_return":      "🌙 *Welcome back, {name}!*\n\n"
+                            "💤 You were in Idle mode: *{duration}*\n"
+                            "⚡ XP gained: *+{xp}*\n\n"
+                            "🎖️ Level: *{level}*\n"
+                            "⏱️ Next level in: *{next}*",
+        "idle_return_no_xp": "🌙 *Welcome back, {name}!*\n\n"
+                            "💤 You were in Idle mode: *{duration}*\n"
+                            "⏸️ No XP accumulated\n\n"
+                            "💡 Press /profile to view status",
         "notif_on":         "🔔 ON",
         "notif_off":        "🔕 OFF",
 
@@ -238,6 +355,9 @@ STRINGS = {
         "autoquest_silent": "🔕 Silent",
         "autoquest_notify": "🔔 With notify",
         "profile_autoquest": "Auto-quests: {icon} {mode}",
+        "auto_quest_locked":  "🔒 *Auto-Accept Quests*\n\nBuy for *5* 🪙 Token to auto-accept quests.",
+        "auto_quest_buy":     "💎 Buy for 5 🪙",
+        "auto_quest_bought":  "✅ Purchased!",
         "quest_accepted":  "✅ Quest accepted!",
 
         # Quest
@@ -280,13 +400,19 @@ STRINGS = {
         "profile_race":     "🧬 Race: *{race}*",
 
         # Global event
+        "global_event":     "🌍 *World Event!*\n\nAll online players received a bonus!",
         "global_event_msg": "⚡ *World Event!*\n\nThe gods turn their gaze to the kingdom...\n{event_text}",
 
         # Info
         "info_title":       "ℹ️ *{game} v{version}*",
-        "info_about":       "Idle RPG for Telegram — just stay online and watch your hero adventure!\n\nLevels grow automatically, random events, monsters, duels and quests — all without player input.",
+        "info_about":       "🎮 *What is this?*\nAn Idle RPG for Telegram — your hero adventures automatically while you're online.\n\n⚡ *How to play:*\n1. Start with /start and register\n2. Choose a race (Human/Dwarf/Elf)\n3. Just stay online — your character farms XP automatically\n4. After level 10 you can use /setjob\n5. Follow events and collect gear\n\n🔥 *Features:*\n• 🎖️ Level and prestige system\n• ⚔️ Automatic monster battles\n• 🤺 Duels with other players\n• 👹 Bosses on the map\n• 🗺️ World map with locations\n• 🎒 8 equipment slots\n• 🎯 Passive skills\n• ⚖️ Alignment (Good/Neutral/Evil)\n• 💼 Class system\n• 📋 Quests with rewards\n• 🏪 Gold shop\n• 🎫 Token VIP shop\n• ⭐ Star Shop (buy tokens)",
         "info_updates":     "📋 *Latest updates:*",
-        "info_commands":    "💬 *Commands:*\n/start — main menu\n/profile — profile\n/pull — loot\n/top — leaderboard\n/quest — current quest\n/setjob — change class (10+ lvl)\n/align — alignment",
+        "info_commands":    "💬 *Commands:*\n/start — Main menu\n/profile — Your profile\n/quest — Quests\n/passives — Passive skills\n/bosses — Boss list\n/setjob — Change class (10+ lvl)\n/align — Alignment\n/alert — Toggle notifications\n/help — Command list\n/starshop — Star Shop",
+
+        # Classes
+        "choose_class":     "💼 *Choose your class:*\n\n╔══════════════════════════════════╗\n║ ⚔️ *Warrior*  — +10% DPS        ║\n║ 🏹 *Archer*   — +10% crit       ║\n║ 🔮 *Mage*     — +15% XP         ║\n║ 🗡️ *Rogue*    — +15% dodge      ║\n║ 🛡️ *Paladin*  — +15% defense    ║\n╚══════════════════════════════════╝",
+        "class_set":        "✅ Class selected: *{class_name}*",
+        "class_changed":    "🔄 Class changed: *{class_name}*",
 
         # Race
         "choose_race":      "⚔️ *Choose your hero's race:*\n\n👤 *Human* — 🍀 20% chance to avoid monster penalty\n⛏️ *Dwarf* — 🛡️ +15% combat power\n🌿 *Elf* — 🏹 +10% bonus on monster victory",
@@ -306,6 +432,20 @@ STRINGS = {
         "boss_list_title": "🏰 *Boss list:*",
         "btn_bosses": "👹 Bosses",
         "btn_maps": "🗺️ Map",
+
+        # Stars Shop
+        "starshop_title":    "⭐ *STAR SHOP*\n\n🎫 Rate: 1 token = {rate}⭐\n📦 Maximum: {max_tokens} tokens per purchase\n\nSelect number of tokens:",
+        "starshop_confirm":  "⭐ *Purchase Confirmation*\n\n🎫 Tokens: *{tokens}*\n💰 Price: *{stars}⭐*\n\nPress the button below to pay.",
+        "starshop_bought":   "✅ *Purchase successful!*\n\n🎫 Received: *{tokens}* tokens\n🎫 Total tokens: *{total_tokens}*",
+        "starshop_limit":    "Maximum {max} tokens per purchase!",
+        "starshop_error":   "❌ An error occurred. Contact administrator.",
+
+        # Passive skills
+        "passive_upgrade":      "⬆ Upgrade",
+        "passive_upgrade_cost": "Cost: {cost}💰",
+        "passive_max_level":    "⭐ MAX LEVEL",
+        "passive_not_enough_gold": "Not enough gold! Need {cost}💰, you have {gold}💰",
+        "passive_upgraded":     "⬆ {icon} {name} Lv.{level}!",
     },
 }
 

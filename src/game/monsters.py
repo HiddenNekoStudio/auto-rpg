@@ -1,6 +1,10 @@
 """
-game/monsters.py — встречи с монстрами
-Каждый час: встреча сразу для ВСЕХ онлайн-игроков, каждый получает личный алерт.
+game/monsters.py — Встречи с монстрами (для обратной совместимости)
+
+Основная логика встреч перенесена в plugins/monsters.py.
+Этот файл оставлен для:
+- Обратной совместимости с существующим кодом
+- Команды админа /admin_spawn для ручного спауна
 
 Race Conditions Protection: Rate limiting 1 encounter в 2 секунды
 
@@ -17,6 +21,8 @@ import config as cfg
 from db import Player
 from bot import ctime, send_to_players
 from core.cache import TTLCache
+from core.monsters import monster_list, monster_list_en
+from core.event_bus import emit_monster_defeated, emit_gold_changed
 
 # Rate limiting — TTL cache вместо бесконечного dict
 _encounter_cooldown = TTLCache(ttl=2.0, maxsize=10000)
@@ -24,40 +30,18 @@ _encounter_cooldown = TTLCache(ttl=2.0, maxsize=10000)
 # Серия побед игроков (win_streak для квестов)
 _win_streak = {}
 
-# Кэш DPS — инвалидируется при смене снаряжения
-_dps_cache = {}
-
-monster_list = [
-    "Бешеная Крыса", "Больной Гоблин", "Переросший Редис", "Дух Кунзиле",
-    "Помидор", "Паршивый Пёс", "Пульсирующая Масса", "Растительное Нашествие",
-    "Двойник", "Кричащий Попугай", "Злобный Бродяга", "Профессиональный Дилетант",
-    "Садистский Садист", "Стойкий Прокрастинатор", "Конвенционный Фурри",
-    "Клацающие Крабы", "Позолоченный Дракон", "Удачливый Вор", "Военный Отряд",
-    "Дракон",
-    "Бабуля", "Голодные Кровопийцы", "Пчела", "Косолапый Лесоруб",
-    "Троглодит", "Ледяной Голем", "Теневой Вампир", "Костяной Рыцарь",
-    "Морской Змей", "Кровавая Ведьма", "Огненный Элементаль",
-]
-
-monster_list_en = [
-    "Mad Rat", "Sick Goblin", "Giant Radish", "Spirit of Kunzile",
-    "Tomato", "Mangy Dog", "Pulsating Mass", "Plant Invasion",
-    "Doppelganger", "Screaming Parrot", "Evil Vagrant", "Professional Amateur",
-    "Sadistic Sadist", "Stubborn Procrastinator", "Furry Convention",
-    "Clacking Crabs", "Gilded Dragon", "Lucky Thief", "War Party",
-    "Dragon",
-    "Grandma", "Hungry Bloodsuckers", "Bee", "Clumsy Lumberjack",
-    "Troglodyte", "Ice Golem", "Shadow Vampire", "Bone Knight",
-    "Sea Serpent", "Blood Witch", "Fire Elemental",
-]
+# Кэш DPS — TTL-кеш вместо plain dict (предотвращает утечку памяти)
+_dps_cache: TTLCache = TTLCache(ttl=300, maxsize=10000)
 
 
 def get_total_dps(player: Player, use_cache: bool = True) -> int:
     """Кэшированный расчёт DPS. Инвалидируется при обновлении снаряжения."""
     cache_key = player.uid
     
-    if use_cache and cache_key in _dps_cache:
-        return _dps_cache[cache_key]
+    if use_cache:
+        cached = _dps_cache.get(cache_key)
+        if cached is not None:
+            return cached
     
     total = sum(
         item.get("dps", 0)
@@ -65,130 +49,302 @@ def get_total_dps(player: Player, use_cache: bool = True) -> int:
         if isinstance(item := getattr(player, slot, None), dict)
     )
     
-    # Гном: +15% к боевой силе
-    if player.race == "dwarf":
-        total = int(total * 1.15)
-    
-    _dps_cache[cache_key] = total
+    from game.races import get_race_dps_mult
+    total = int(total * get_race_dps_mult(player.race))
+
+    # Воин: +10% DPS
+    from game.classes import get_class_bonus
+    cls_bonus = get_class_bonus(player.job)
+    if cls_bonus.get("dps_pct"):
+        total = int(total * (1 + cls_bonus["dps_pct"] / 100))
+
+    _dps_cache.set(cache_key, total)
     return total
 
 
 def invalidate_dps_cache(uid: int) -> None:
     """Инвалидирует кэш DPS при смене снаряжения."""
-    _dps_cache.pop(uid, None)
+    _dps_cache.delete(str(uid))
 
 
 async def encounter_one(bot: Bot, player: Player, monster: str, monster_level: int) -> None:
     """Битва одного игрока с указанным монстром. Обновляет БД и шлёт личный алерт."""
-    
+
     # Rate limiting — TTL cache автоматически очищается
     uid = player.uid
     if _encounter_cooldown.get(str(uid)) is not None:
         return  # Cooldown active
-    
+
     _encounter_cooldown.set(str(uid), True)
-    
-    lang  = player.lang or "ru"
+
+    lang = player.lang or "ru"
+    from game.classes import get_class_bonus
+    cls_bonus = get_class_bonus(player.job)
+
+    # Инициализация HP/MP если не установлены
+    if not player.hp or player.hp <= 0:
+        player.hp = player.get_max_hp()
+    player.sync_max_hp_mp()
+    if not player.mp or player.mp <= 0:
+        player.mp = player.get_max_mp()
+    if not player.defense:
+        player.defense = 0
+
+    await player.update(_columns=["hp", "max_hp", "mp", "max_mp", "defense"])
+
+    # Паладин: +15% к защите (только для боя, не сохраняем)
+    if cls_bonus.get("defense_pct"):
+        player.defense = int(player.defense * (1 + cls_bonus["defense_pct"] / 100))
+
+    # Параметры монстра
     p_max = get_total_dps(player)
     m_max = random.randint(max(1, p_max - 500), p_max + 250)
+    monster_hp = 50 + monster_level * 10
+    monster_max_hp = monster_hp
+    monster_defense = monster_level * 2
 
-    smite_chance  = (random.random() <= 0.10 and player.align == 1)
-    player_score  = (
-        random.randint(1, p_max * 2) if smite_chance
-        else random.randint(1, max(1, p_max))
-    )
-    monster_score = random.randint(1, max(1, m_max))
+    # Раунды боя
+    rounds = []
+    round_num = 0
+    player_hp = player.hp
+    monster_hp_current = monster_hp
 
-    alvar = 90 if player.align == 1 else 100
-    val   = int(random.randint(4, 6) / alvar * (player.nextxp - player.currentxp))
+    while player_hp > 0 and monster_hp_current > 0:
+        round_num += 1
 
-    smite_str = ""
-    if smite_chance:
-        smite_str = "\n✨ *СМАЙТ!*" if lang != "en" else "\n✨ *SMITE!*"
+        # Атака игрока
+        player_dmg = max(1, p_max // 2)
+        defense_reduction = min(0.75, monster_defense / (monster_defense + 200))
+        player_dmg = int(player_dmg * (1 - defense_reduction))
+        monster_hp_current = max(0, monster_hp_current - player_dmg)
 
-    # Формируем общую часть сообщения
-    score_line = f"{'Ты' if lang != 'en' else 'You'} [{player_score}/{p_max}] vs {f'Ур.{monster_level}' if lang != 'en' else f'Lv.{monster_level}'} *{monster}* [{monster_score}/{m_max}]{smite_str}"
-    
-    if player_score >= monster_score:
-        elf_mult      = 1.1 if player.race == "elf" else 1.0
-        effective_val = max(1, int(val * elf_mult))
-        player.nextxp = max(player.currentxp + 1, player.nextxp - effective_val)
+        round_result = {
+            "num": round_num,
+            "player_attack": player_dmg,
+            "monster_hp": monster_hp_current,
+            "monster_max": monster_max_hp,
+        }
 
-        gold_reward = (monster_level * 5) + random.randint(0, player.level * 2)
-        player.gold += gold_reward
+        # Если монстр жив - его атака
+        if monster_hp_current > 0:
+            monster_dmg = max(1, m_max // 2)
+            player_def_reduction = player.get_defense_reduction()
+            monster_dmg = int(monster_dmg * (1 - player_def_reduction))
+            player_hp = max(0, player_hp - monster_dmg)
 
+            round_result["monster_attack"] = monster_dmg
+            round_result["player_hp"] = player_hp
+            round_result["player_max"] = player.max_hp
+
+        rounds.append(round_result)
+
+        if round_num >= 20:
+            break
+
+    player_won = monster_hp_current <= 0
+
+    # Проверка уклонения
+    from game.skills.passives.registry import PassiveSkillRegistry
+    # Разбойник: +15% к уклонению
+    rogue_dodge = cls_bonus.get("dodge_pct", 0) > 0 and random.random() < 0.15
+    dodge_ok, first_strike_active, encounter_res = await PassiveSkillRegistry.trigger_on_encounter(player)
+    if dodge_ok or rogue_dodge:
+        _encounter_cooldown.delete(str(uid))
+        msg_extra = encounter_res.message if encounter_res.message else ""
         if lang == "en":
             msg = "\n".join([
                 "⚔️ *Monster Encounter!*",
-                "", score_line, "",
-                f"🏆 *YOU WIN!* -{ctime(effective_val)} to level {player.level + 1}!",
-                f"💰 Gold: +{gold_reward}",
-                f"Next level in: *{ctime(player.nextxp - player.currentxp)}*",
+                "", f"{player.name} vs *{monster}*", "",
+                "👤 *DODGE!*\nYou evaded the monster completely!",
+                f"\n{msg_extra}" if msg_extra else "",
             ])
         else:
             msg = "\n".join([
                 "⚔️ *Встреча с монстром!*",
-                "", score_line, "",
-                f"🏆 *ТЫ ПОБЕДИЛ!* Бонус -{ctime(effective_val)} к уровню {player.level + 1}!",
-                f"💰 Золото: +{gold_reward}",
-                f"До след. уровня: *{ctime(player.nextxp - player.currentxp)}*",
+                "", f"{player.name} vs *{monster}*", "",
+                "👤 *УКЛОНЕНИЕ!*\nТы полностью уклонился от монстра!",
+                f"\n{msg_extra}" if msg_extra else "",
+            ])
+        await send_to_players(bot, msg, player_uids=[player.uid])
+        return
+
+    # Расчёт штрафа/награды (старая логика)
+    p_max = get_total_dps(player)
+    m_max = random.randint(max(1, p_max - 500), p_max + 250)
+    alvar = 90 if player.align == 1 else 100
+    val = int(random.randint(4, 6) / alvar * (player.nextxp - player.currentxp))
+
+    # Лучник: +10% к шансу крита
+    archer_crit = cls_bonus.get("crit_pct", 0) > 0 and random.random() < 0.10
+    smite_chance = (random.random() <= 0.10 and player.align == 1) or archer_crit
+    smite_str = "\n✨ *СМАЙТ!* " if smite_chance and lang != "en" else ("\n✨ *SMITE!* " if smite_chance else "")
+
+    if player_won:
+        player.monster_kills = (player.monster_kills or 0) + 1
+        from game.races import get_race_xp_mult
+        elf_mult = get_race_xp_mult(player.race)
+        # Маг: +15% к опыту
+        mage_mult = 1.0
+        if cls_bonus.get("xp_pct"):
+            mage_mult = 1.0 + cls_bonus["xp_pct"] / 100
+        effective_val = max(1, int(val * elf_mult * mage_mult))
+
+        player.nextxp = max(player.currentxp + 1, player.nextxp - effective_val)
+
+        gold_reward = (monster_level * 5) + random.randint(0, player.level * 2)
+
+        bonus_gold, bonus_xp, kill_res = await PassiveSkillRegistry.trigger_on_kill(
+            player, monster_level, gold_reward, effective_val
+        )
+        gold_reward += bonus_gold
+        effective_val += bonus_xp
+
+        if bonus_xp > 0:
+            player.nextxp = max(player.currentxp + 1, player.nextxp - bonus_xp)
+
+        # Prestige бонус на всю XP (база + пассивки)
+        from plugins.vip_shop import has_prestige_xp_bonus, get_prestige_xp_multiplier
+        if has_prestige_xp_bonus(player):
+            prestige_mult = get_prestige_xp_multiplier(player)
+            additional_xp = int(effective_val * (prestige_mult - 1.0))
+            if additional_xp > 0:
+                player.nextxp = max(player.currentxp + 1, player.nextxp - additional_xp)
+                effective_val += additional_xp
+
+        from plugins.vip_shop import has_prestige_gold_bonus, get_prestige_gold_multiplier
+        if has_prestige_gold_bonus(player):
+            gold_reward = int(gold_reward * get_prestige_gold_multiplier(player))
+
+        player.gold += gold_reward
+
+        await emit_monster_defeated(player.uid, effective_val, gold_reward, monster_level)
+        await emit_gold_changed(player.uid, gold_reward, "monster_victory")
+
+        passive_kill_msg = f"\n{kill_res.message}" if kill_res.triggered and kill_res.message else ""
+
+        # Формируем сообщение с раундами
+        round_lines = []
+        for r in rounds:
+            p_hp_bar = "█" * int(r["player_hp"] / r["player_max"] * 6) + "░" * (6 - int(r["player_hp"] / r["player_max"] * 6))
+            m_hp_bar = "█" * int(r["monster_hp"] / r["monster_max"] * 6) + "░" * (6 - int(r["monster_hp"] / r["monster_max"] * 6))
+            dmg_label = "dmg" if lang == "en" else "урона"
+            round_lines.append(
+                f"  ⚔️ {r['player_attack']} {dmg_label} → 👹 [{m_hp_bar}] {r['monster_hp']}/{r['monster_max']}"
+            )
+            if "monster_attack" in r:
+                round_lines.append(
+                    f"  👹 {r['monster_attack']} {dmg_label} → 👤 [{p_hp_bar}] {r['player_hp']}/{r['player_max']}"
+                )
+
+        rounds_str = "\n".join(round_lines[:10])
+
+        if lang == "en":
+            msg = "\n".join([
+                "⚔️ *Monster Encounter!*",
+                f"  👤 *{player.name}* vs 👹 *{monster}* (Lv.{monster_level})",
+                f"  📊 HP: {player.hp}/{player.max_hp} | 🛡️ {player.get_defense()}",
+                "",
+                f"━━━ Rounds {len(rounds)} ━━━",
+                rounds_str,
+                "",
+                 f"🏆 *YOU WIN!* -{ctime(effective_val, lang)} to level {player.level + 1}!",
+                 f"💰 Gold: +{gold_reward}",
+                 f"Next level in: *{ctime(player.nextxp - player.currentxp, lang)}*",
+                passive_kill_msg,
+            ])
+        else:
+            msg = "\n".join([
+                "⚔️ *Встреча с монстром!*",
+                f"  👤 *{player.name}* vs 👹 *{monster}* (Ур.{monster_level})",
+                f"  📊 HP: {player.hp}/{player.max_hp} | 🛡️ {player.get_defense()}",
+                "",
+                f"━━━ Раунды ({len(rounds)}) ━━━",
+                rounds_str,
+                "",
+                 f"🏆 *ТЫ ПОБЕДИЛ!* Бонус -{ctime(effective_val, lang)} к уровню {player.level + 1}!",
+                 f"💰 Золото: +{gold_reward}",
+                 f"До след. уровня: *{ctime(player.nextxp - player.currentxp, lang)}*",
+                passive_kill_msg,
             ])
 
+        current_streak = _win_streak.get(player.uid, 0) + 1
+        _win_streak[player.uid] = current_streak
+
     else:
-        lucky = (player.race == "human" and random.random() < 0.20)
+        from game.races import get_race_bonus
+        lucky = player.race == "human" and random.random() < get_race_bonus(player.race, "luck_chance", 0.0)
 
         if lucky:
             if lang == "en":
                 msg = "\n".join([
                     "⚔️ *Monster Encounter!*",
-                    "", score_line, "",
-                    "💀 Monster got the upper hand...",
+                    f"  👤 *{player.name}* vs 👹 *{monster}* (Lv.{monster_level})",
+                    "",
                     "🍀 *HUMAN LUCK!* You narrowly escaped — no penalty this time!",
                 ])
             else:
                 msg = "\n".join([
                     "⚔️ *Встреча с монстром!*",
-                    "", score_line, "",
-                    "💀 Монстр взял верх...",
+                    f"  👤 *{player.name}* vs 👹 *{monster}* (Ур.{monster_level})",
+                    "",
                     "🍀 *УДАЧА ЧЕЛОВЕКА!* Ты едва ускользнул — штраф отменяется!",
                 ])
         else:
-            player.nextxp      += val
+            player.monster_deaths = (player.monster_deaths or 0) + 1
+            player.nextxp += val
             player.totalxplost += val
+
+            round_lines = []
+            for r in rounds:
+                p_hp_bar = "█" * int(r["player_hp"] / r["player_max"] * 6) + "░" * (6 - int(r["player_hp"] / r["player_max"] * 6))
+                m_hp_bar = "█" * int(r["monster_hp"] / r["monster_max"] * 6) + "░" * (6 - int(r["monster_hp"] / r["monster_max"] * 6))
+                dmg_label = "dmg" if lang == "en" else "урона"
+                round_lines.append(
+                    f"  ⚔️ {r['player_attack']} {dmg_label} → 👹 [{m_hp_bar}] {r['monster_hp']}/{r['monster_max']}"
+                )
+                if "monster_attack" in r:
+                    round_lines.append(
+                        f"  👹 {r['monster_attack']} {dmg_label} → 👤 [{p_hp_bar}] {r['player_hp']}/{r['player_max']}"
+                    )
+
+            rounds_str = "\n".join(round_lines[:10])
+
             if lang == "en":
                 msg = "\n".join([
                     "⚔️ *Monster Encounter!*",
-                    "", score_line, "",
-                    f"💀 *MONSTER WINS!* Penalty +{ctime(val)} to level {player.level + 1}.",
-                    f"Next level in: *{ctime(player.nextxp - player.currentxp)}*",
+                    f"  👤 *{player.name}* vs 👹 *{monster}* (Lv.{monster_level})",
+                    f"  📊 HP: {player.hp}/{player.max_hp} | 🛡️ {player.get_defense()}",
+                    "",
+                    f"━━━ Rounds {len(rounds)} ━━━",
+                    rounds_str,
+                    "",
+                     f"💀 *MONSTER WINS!* Penalty +{ctime(val, lang)} to level {player.level + 1}.",
+                     f"Next level in: *{ctime(player.nextxp - player.currentxp, lang)}*",
                 ])
             else:
                 msg = "\n".join([
                     "⚔️ *Встреча с монстром!*",
-                    "", score_line, "",
-                    f"💀 *МОНСТР ПОБЕДИЛ!* Штраф +{ctime(val)} к уровню {player.level + 1}.",
-                    f"До след. уровня: *{ctime(player.nextxp - player.currentxp)}*",
+                    f"  👤 *{player.name}* vs 👹 *{monster}* (Ур.{monster_level})",
+                    f"  📊 HP: {player.hp}/{player.max_hp} | 🛡️ {player.get_defense()}",
+                    "",
+                    f"━━━ Раунды ({len(rounds)}) ━━━",
+                    rounds_str,
+                    "",
+                     f"💀 *МОНСТР ПОБЕДИЛ!* Штраф +{ctime(val, lang)} к уровню {player.level + 1}.",
+                     f"До след. уровня: *{ctime(player.nextxp - player.currentxp, lang)}*",
                 ])
 
-    await player.update(_columns=["nextxp", "totalxplost", "gold"])
-    
-    # Обновляем прогресс квестов
+            _win_streak[player.uid] = 0
+
+    await player.update(_columns=["nextxp", "totalxplost", "gold", "hp", "monster_kills", "monster_deaths"])
+
     from handlers.quests import update_quest_progress
     await update_quest_progress(player, "kill_monster", 1)
-    
-    # Триггеры для новых квестов: win_streak и death
-    if player_score >= monster_score:
-        # Победа - обновляем серию побед
-        current_streak = _win_streak.get(player.uid, 0) + 1
-        _win_streak[player.uid] = current_streak
-        
-        from game.quests import on_win_streak
-        await on_win_streak(player, current_streak)
+
+    from game.quests import on_win_streak, on_death
+    if player_won:
+        await on_win_streak(player, _win_streak.get(player.uid, 1))
     else:
-        # Поражение - сбрасываем серию и триггерим death
-        _win_streak[player.uid] = 0
-        
-        from game.quests import on_death
         await on_death(player)
     
     # NEW QUEST SYSTEM
@@ -233,3 +389,12 @@ async def encounter(bot: Bot, player: Player) -> None:
     monster = random.choice(monster_list_en if lang == "en" else monster_list)
     monster_level = random.randint(max(1, player.level - 10), player.level + 20)
     await encounter_one(bot, player, monster, monster_level)
+
+
+async def spawn_all(bot: Bot) -> None:
+    """Вызвать встречу с монстрами для всех онлайн-игроков (для admin)."""
+    from db import Player
+    players = await Player.get_active_players()
+    if players:
+        from plugins.monsters import spawn_all_monsters
+        await spawn_all_monsters(bot)

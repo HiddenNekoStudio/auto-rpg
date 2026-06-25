@@ -31,10 +31,24 @@ async def callback_boss_fight(update: Update, context: ContextTypes.DEFAULT_TYPE
     
     boss_id = query.data.replace("boss_fight_", "")
     boss = await Boss.objects.get_or_none(boss_id=boss_id)
-    if not boss:
+    if not boss or boss.defeated:
+        if boss and boss.defeated:
+            lang = player.lang or "ru"
+            msg = "Этот босс уже побеждён!" if lang != "en" else "This boss is already defeated!"
+            await query.message.edit_text(msg)
         return
     
     lang = player.lang or "ru"
+    
+    from game.bosses import BOSS_RADIUS_CHOICE, _boss_distance
+    dist = _boss_distance(player.x, player.y, boss.x, boss.y)
+    if dist > BOSS_RADIUS_CHOICE:
+        msg = "Босс слишком далеко!" if lang != "en" else "Boss too far!"
+        try:
+            await query.message.edit_text(msg)
+        except Exception:
+            pass
+        return
     
     await query.message.delete()
     
@@ -62,7 +76,7 @@ async def callback_boss_leave(update: Update, context: ContextTypes.DEFAULT_TYPE
         try:
             if player.state_context:
                 state_ctx = json_module.loads(player.state_context) if isinstance(player.state_context, str) else player.state_context
-        except:
+        except Exception:
             state_ctx = {}
         
         if boss:
@@ -90,7 +104,7 @@ async def cmd_bosses(update: Update, context: ContextTypes.DEFAULT_TYPE):
     lang = player.lang or "ru"
     
     from game.bosses import format_boss_list as boss_list
-    text = boss_list(lang)
+    text = await boss_list(lang)
     
     await update.message.reply_text(text, parse_mode="Markdown")
 

@@ -6,7 +6,7 @@ core/exceptions.py — Кастомные исключения для бота
 class BotException(Exception):
     """Базовый класс для исключений бота"""
     def reply(self, lang: str = "ru") -> str:
-        return "Произошла ошибка. Попробуй позже."
+        return "Error occurred. Try again later." if lang == "en" else "Произошла ошибка. Попробуй позже."
 
 
 class PlayerNotFound(BotException):
@@ -15,7 +15,7 @@ class PlayerNotFound(BotException):
         self.uid = uid
 
     def reply(self, lang: str = "ru") -> str:
-        return "Ты не зарегистрирован! Нажми /start"
+        return "You are not registered! Use /start" if lang == "en" else "Ты не зарегистрирован! Нажми /start"
 
 
 class InsufficientTokens(BotException):
@@ -80,4 +80,4 @@ class DatabaseError(BotException):
         self.original = original
 
     def reply(self, lang: str = "ru") -> str:
-        return "Ошибка базы данных. Попробуй позже."
+        return "Database error. Try again later." if lang == "en" else "Ошибка базы данных. Попробуй позже."

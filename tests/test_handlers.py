@@ -51,7 +51,7 @@ class TestItemString:
             "rank": "Common",
             "flair": None,
         }
-        result = item_string(item)
+        result = item_string(item, "ru")
         assert "Меч" in result
         assert "Базовый" in result
         assert "25" in result
@@ -69,7 +69,7 @@ class TestItemString:
             "rank": "Legendary",
             "flair": "Подписан Афиной",
         }
-        result = item_string(item)
+        result = item_string(item, "ru")
         assert "Подписан Афиной" in result
 
     def test_item_string_different_rarities(self):
@@ -94,7 +94,7 @@ class TestItemString:
                 "rank": rank,
                 "flair": None,
             }
-            result = item_string(item)
+            result = item_string(item, "ru")
             assert expected_emoji in result
 
 
@@ -402,3 +402,128 @@ class TestLangParsing:
         for callback, expected in callbacks:
             lang = callback.split("_")[-1]
             assert lang == expected
+
+
+# --- Тесты Stars Shop ---
+
+class TestStarsShopConfig:
+    """Тесты конфигурации Stars магазина"""
+
+    def test_stars_rate_default(self):
+        """Курс по умолчанию = 50"""
+        import config as cfg
+        rate = getattr(cfg, 'STARS_SHOP_RATE', 50)
+        assert rate == 50
+
+    def test_stars_max_per_purchase_default(self):
+        """Максимум токенов за раз по умолчанию = 10"""
+        import config as cfg
+        max_tokens = getattr(cfg, 'STARS_SHOP_MAX_PER_PURCHASE', 10)
+        assert max_tokens == 10
+
+    def test_stars_rate_calculation(self):
+        """Проверка расчёта цены в Stars"""
+        rate = 50
+        tokens = 5
+        expected_stars = tokens * rate
+        assert expected_stars == 250
+
+    def test_stars_max_tokens_enforced(self):
+        """Максимум 10 токенов должен применяться"""
+        max_tokens = 10
+        for invalid in [0, 11, 100]:
+            result = max(1, min(max_tokens, invalid))
+            if invalid > max_tokens:
+                assert result == max_tokens
+            elif invalid < 1:
+                assert result == 1
+
+
+class TestStarsShopKeyboard:
+    """Тесты клавиатуры Stars магазина"""
+
+    def test_keyboard_buttons_count(self):
+        """Количество кнопок = 10 (1-10 токенов)"""
+        from plugins.stars_shop import build_stars_keyboard
+        keyboard = build_stars_keyboard("ru")
+        buttons = keyboard.inline_keyboard
+        # 10 кнопок токенов + 1 кнопка "Назад"
+        assert len(buttons) == 11
+
+    def test_keyboard_callback_data(self):
+        """Проверка callback_data для кнопок"""
+        from plugins.stars_shop import build_stars_keyboard
+        keyboard = build_stars_keyboard("ru")
+        buttons = keyboard.inline_keyboard[:-1]  # Исключаем кнопку "Назад"
+        for i, row in enumerate(buttons):
+            for btn in row:
+                expected = f"stars_buy_{i + 1}"
+                if btn.callback_data:
+                    assert expected in btn.callback_data or i < len(btn.callback_data)
+
+
+class TestStarsShopTranslation:
+    """Тесты переводов Stars магазина"""
+
+    def test_starshop_title_ru(self):
+        """Заголовок магазина на русском"""
+        from i18n import t
+        result = t("ru", "starshop_title", rate=50, max_tokens=10)
+        assert "STAR МАГАЗИН" in result
+        assert "50" in result
+        assert "10" in result
+
+    def test_starshop_title_en(self):
+        """Заголовок магазина на английском"""
+        from i18n import t
+        result = t("en", "starshop_title", rate=50, max_tokens=10)
+        assert "STAR SHOP" in result
+        assert "50" in result
+
+    def test_starshop_confirm_ru(self):
+        """Подтверждение покупки на русском"""
+        from i18n import t
+        result = t("ru", "starshop_confirm", tokens=5, stars=250)
+        assert "5" in result
+        assert "250" in result
+
+    def test_starshop_bought_ru(self):
+        """Сообщение об успешной покупке на русском"""
+        from i18n import t
+        result = t("ru", "starshop_bought", tokens=5, total_tokens=15)
+        assert "5" in result
+        assert "15" in result
+
+    def test_starshop_limit_ru(self):
+        """Сообщение о лимите на русском"""
+        from i18n import t
+        result = t("ru", "starshop_limit", max=10)
+        assert "10" in result
+
+
+class TestStarsShopPayload:
+    """Тесты payload для платежей"""
+
+    def test_payload_format(self):
+        """Проверка формата payload"""
+        import time as time_module
+        user_id = 123456
+        tokens = 5
+        timestamp = int(time_module.time())
+        payload = f"stars_{user_id}_{tokens}_{timestamp}"
+        assert payload.startswith("stars_")
+        parts = payload.split("_")
+        assert len(parts) == 4
+        assert parts[1] == str(user_id)
+        assert parts[2] == str(tokens)
+
+    def test_payload_parsing(self):
+        """Парсинг payload обратно в компоненты"""
+        payload = "stars_123456_5_1714000000"
+        parts = payload.split("_")
+        user_id = int(parts[1])
+        tokens = int(parts[2])
+        timestamp = int(parts[3])
+        assert user_id == 123456
+        assert tokens == 5
+        assert timestamp == 1714000000

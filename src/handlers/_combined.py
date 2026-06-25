@@ -1,67 +1,71 @@
-"""handlers/_combined.py — /setjob, /help, /alert, /quest"""
+"""
+handlers/_combined.py — объединённые хендлеры
 
-import asyncio
+Содержит команды: /setjob, /help, /alert, /quest и их колбэки.
+"""
 import logging
 from datetime import datetime
 
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
-from telegram.error import NetworkError, RetryAfter, TimedOut
 from telegram.ext import Application, CommandHandler, CallbackQueryHandler, ContextTypes
 
 import config as cfg
-from db import Player, Quest
+from db import Player, Quest, set_player_optin
 from bot import ctime
 from i18n import t
+from core.telegram_utils import safe_edit
 
 
-async def safe_edit(query, text, keyboard=None, parse_mode="Markdown", retries=3, reply_markup=None):
-    keyboard = keyboard or reply_markup
-    for attempt in range(retries):
-        try:
-            await query.edit_message_text(text, parse_mode=parse_mode, reply_markup=keyboard)
-            return
-        except RetryAfter as e:
-            await asyncio.sleep(e.retry_after + 1)
-        except (NetworkError, TimedOut):
-            if attempt < retries - 1:
-                await asyncio.sleep(1.5 * (attempt + 1))
-            else:
-                logging.warning("safe_edit failed after %d attempts", retries)
-        except Exception as e:
-            if "Message is not modified" in str(e):
-                return
-            logging.warning("safe_edit error: %s", e)
-            return
-
-
-async def cmd_setjob(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def cmd_setjob(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Установка профессии игрока (/setjob)."""
     user = update.effective_user
     player = await Player.objects.get_or_none(uid=user.id)
     lang = (player.lang or "ru") if player else "ru"
     if not player:
         await update.message.reply_text(t(lang, "not_registered"))
         return
-    if player.level < 10:
+    if not player.onboarding_done and player.level < 10:
         await update.message.reply_text(t(lang, "job_low_level"), parse_mode="Markdown")
         return
+
     if not context.args:
+        from handlers.user import class_keyboard
         await update.message.reply_text(
-            t(lang, "job_prompt", job=player.job), parse_mode="Markdown")
+            t(lang, "choose_class"), parse_mode="Markdown",
+            reply_markup=class_keyboard(lang))
         return
+
+    from game.classes import CLASSES, class_display
     job_name = " ".join(context.args)
+    # Match preset class by name
+    for c in CLASSES.values():
+        if job_name.lower() in (c["name_ru"].lower(), c["name_en"].lower()):
+            job_name = c["name_ru"] if lang == "ru" else c["name_en"]
+            break
+
     if not all(x.isalpha() or x.isspace() for x in job_name) or len(job_name) > 50:
         return
+
+    old_job = player.job
     player.job = job_name
     await player.update(_columns=["job"])
+
+    if not player.onboarding_done:
+        player.onboarding_done = True
+        await player.update(_columns=["onboarding_done"])
+
     keyboard = InlineKeyboardMarkup([[
-        InlineKeyboardButton(t(lang, "btn_profile") if lang == "ru" else "👤 Profile",
+        InlineKeyboardButton("👤 Profile" if lang == "en" else t(lang, "btn_profile"),
                              callback_data="menu_profile"),
     ]])
-    await update.message.reply_text(t(lang, "job_set", job=job_name),
+    t_key = "job_set" if not old_job else "class_changed"
+    display = class_display(job_name, lang)
+    await update.message.reply_text(t(lang, t_key, class_name=display),
                                     parse_mode="Markdown", reply_markup=keyboard)
 
 
-async def callback_job_prompt(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def callback_job_prompt(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Колбэк меню установки профессии."""
     query = update.callback_query
     await query.answer()
     user = query.from_user
@@ -74,11 +78,12 @@ async def callback_job_prompt(update: Update, context: ContextTypes.DEFAULT_TYPE
         await safe_edit(query, t(lang, "job_low_level"),
                         parse_mode="Markdown", reply_markup=keyboard)
         return
-    await safe_edit(query, t(lang, "job_prompt", job=player.job),
+    await safe_edit(query, t(lang, "job_prompt", job=player.job or ("Recruit" if lang == "en" else "Новобранец")),
                     parse_mode="Markdown", reply_markup=keyboard)
 
 
-async def cmd_help(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def cmd_help(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Показ списка команд (/help)."""
     from handlers.user import main_menu_keyboard
     user = update.effective_user
     player = await Player.objects.get_or_none(uid=user.id)
@@ -88,50 +93,37 @@ async def cmd_help(update: Update, context: ContextTypes.DEFAULT_TYPE):
         reply_markup=main_menu_keyboard(lang))
 
 
-async def cmd_alert(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def cmd_alert(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Переключение уведомлений игрока (/alert)."""
     user = update.effective_user
     player = await Player.objects.get_or_none(uid=user.id)
     lang = (player.lang or "ru") if player else "ru"
     if not player:
         await update.message.reply_text(t(lang, "not_registered"))
         return
-    player.optin = not player.optin
-    await player.update(_columns=["optin"])
+    new_optin = not player.optin
+    await set_player_optin(player.uid, new_optin)
+    player.optin = new_optin
     status_str = t(lang, "notif_on_txt") if player.optin else t(lang, "notif_off_txt")
     await update.message.reply_text(t(lang, "notif_status", status=status_str),
                                     parse_mode="Markdown")
 
 
-async def cmd_quest(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user = update.effective_user
-    player = await Player.objects.get_or_none(uid=user.id)
-    lang = (player.lang or "ru") if player else "ru"
-    quest = await Quest.objects.get_or_none()
-    keyboard = InlineKeyboardMarkup([[
-        InlineKeyboardButton(t(lang, "refresh"), callback_data="menu_quest"),
-        InlineKeyboardButton(t(lang, "menu"),    callback_data="menu_back"),
-    ]])
-    if not quest:
-        await update.message.reply_text(t(lang, "quest_none"), reply_markup=keyboard)
-        return
-    remaining = quest.deadline - int(datetime.now().timestamp())
-    text = (
-        t(lang, "quest_title") + "\n"
-        + t(lang, "quest_players", players=quest.players) + "\n"
-        + t(lang, "quest_goal", goal=quest.goal) + "\n"
-        + t(lang, "quest_progress", time=ctime(quest.endxp - quest.currentxp)) + "\n"
-        + t(lang, "quest_deadline", time=ctime(max(0, remaining)))
-    )
-    await update.message.reply_text(text, parse_mode="Markdown", reply_markup=keyboard)
+async def cmd_quest(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Перенаправление на /quests."""
+    from handlers.quests import cmd_myquests
+    await cmd_myquests(update, context)
 
 
-def register_jobs(app: Application):
+def register_jobs(app: Application) -> None:
+    """Регистрация хендлеров команд setjob/job."""
     app.add_handler(CommandHandler("setjob", cmd_setjob))
     app.add_handler(CommandHandler("job",    cmd_setjob))
     app.add_handler(CallbackQueryHandler(callback_job_prompt, pattern="^job_prompt$"))
 
 
-def register_listeners(app: Application):
+def register_listeners(app: Application) -> None:
+    """Регистрация хендлеров команд help/alert/quest."""
     app.add_handler(CommandHandler("help",  cmd_help))
     app.add_handler(CommandHandler("alert", cmd_alert))
     app.add_handler(CommandHandler("quest", cmd_quest))

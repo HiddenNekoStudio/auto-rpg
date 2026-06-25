@@ -14,6 +14,7 @@ from bot import ctime, item_string, send_to_players, readfile
 
 async def randomevent(bot: Bot, player: Player):
     """Запускает случайное событие для игрока и шлёт ему в личку."""
+    lang = player.lang or "ru"
     event_choice = random.choices(
         ["gevent", "bevent", "hog"],
         weights=[70, 25, 5],
@@ -24,14 +25,17 @@ async def randomevent(bot: Bot, player: Player):
     val = int((random.randint(4, 6) / alvar) * (player.nextxp - player.currentxp))
 
     if event_choice == "gevent":
+        from plugins.vip_shop import has_prestige_xp_bonus, get_prestige_xp_multiplier
+        if has_prestige_xp_bonus(player):
+            val = int(val * get_prestige_xp_multiplier(player))
         player.nextxp -= val
         if player.nextxp - player.currentxp < 0:
             player.nextxp = player.currentxp + 1
         event = random.choice(readfile("gevents"))
         title  = f"⚡ *Ты {event}!*"
         detail = (
-            f"Это чудесное событие ускорило тебя на *{ctime(val)}* к уровню *{player.level + 1}*.\n"
-            f"До следующего уровня: *{ctime(player.nextxp - player.currentxp)}*"
+            f"Это чудесное событие ускорило тебя на *{ctime(val, lang)}* к уровню *{player.level + 1}*.\n"
+            f"До следующего уровня: *{ctime(player.nextxp - player.currentxp, lang)}*"
         )
     elif event_choice == "bevent":
         player.nextxp += val
@@ -39,18 +43,21 @@ async def randomevent(bot: Bot, player: Player):
         event = random.choice(readfile("bevents"))
         title  = f"⚡ *Ты {event}!*"
         detail = (
-            f"Это несчастливое событие замедлило тебя на *{ctime(val)}* к уровню *{player.level + 1}*.\n"
-            f"До следующего уровня: *{ctime(player.nextxp - player.currentxp)}*"
+            f"Это несчастливое событие замедлило тебя на *{ctime(val, lang)}* к уровню *{player.level + 1}*.\n"
+            f"До следующего уровня: *{ctime(player.nextxp - player.currentxp, lang)}*"
         )
     else:  # hog — очень редкое
         val = int((10 + random.randint(1, 8)) / alvar * player.nextxp)
+        from plugins.vip_shop import has_prestige_xp_bonus, get_prestige_xp_multiplier
+        if has_prestige_xp_bonus(player):
+            val = int(val * get_prestige_xp_multiplier(player))
         player.nextxp -= val
         if player.nextxp - player.currentxp < 0:
             player.nextxp = player.currentxp + 1
         title  = f"⚡ *Благословение! Ты был коснут Рукой Закона!*"
         detail = (
-            f"Это редчайшее событие ускорило тебя на *{ctime(val)}* к уровню *{player.level + 1}*.\n"
-            f"До следующего уровня: *{ctime(player.nextxp - player.currentxp)}*"
+            f"Это редчайшее событие ускорило тебя на *{ctime(val, lang)}* к уровню *{player.level + 1}*.\n"
+            f"До следующего уровня: *{ctime(player.nextxp - player.currentxp, lang)}*"
         )
 
     await player.update(_columns=["nextxp", "totalxplost"])
@@ -73,7 +80,7 @@ async def randomevent(bot: Bot, player: Player):
         f"{title}\n\n"
         f"{detail}\n\n"
         f"🎁 *Новый лут!*\n"
-        f"{item_string(item)}\n"
+        f"{item_string(item, lang)}\n"
         f"_{footer}_"
     )
 

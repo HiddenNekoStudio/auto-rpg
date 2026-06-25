@@ -59,7 +59,6 @@ class RedisCache:
         try:
             self._client = redis.from_url(
                 redis_url,
-                encoding="utf-8",
                 decode_responses=True,
             )
             await self._client.ping()
@@ -202,3 +201,215 @@ async def invalidate_leaderboard():
     """Инвалидировать кэш топа."""
     cache = await RedisCache.get_instance()
     await cache.delete("leaderboard:top10")
+
+
+# ── PlayerState для быстрых операций с игроками ───
+
+LUA_ADD_IDLE_XP = """
+local key = KEYS[1]
+local amount = tonumber(ARGV[1])
+local elf_bonus = tonumber(ARGV[2])
+local race = redis.call('HGET', key, 'race') or ''
+
+local multiplier = 1.0
+if race == 'elf' then
+    multiplier = elf_bonus
+end
+
+local current_xp = tonumber(redis.call('HGET', key, 'idle_xp') or '0')
+local new_xp = current_xp + (amount * multiplier)
+redis.call('HSET', key, 'idle_xp', new_xp)
+
+return new_xp
+"""
+
+LUA_SYNC_TO_DB = """
+local key = KEYS[1]
+local fields = cjson.decode(ARGV[1])
+for field, value in pairs(fields) do
+    redis.call('HSET', key, field, value)
+end
+return 'OK'
+"""
+
+
+class PlayerState:
+    """
+    Управление состоянием игрока в Redis для быстрых операций.
+    Использует Lua-скрипты для атомарности.
+    """
+
+    _instance: Optional['PlayerState'] = None
+    _client: Optional[redis.Redis] = None
+
+    @classmethod
+    async def get_instance(cls) -> 'PlayerState':
+        if cls._instance is None:
+            cls._instance = PlayerState()
+            await cls._instance.connect()
+        return cls._instance
+
+    async def connect(self):
+        """Подключиться к Redis."""
+        if not REDIS_AVAILABLE:
+            logger.warning("Redis not available for PlayerState")
+            return
+
+        import os
+        redis_url = os.getenv("REDIS_URL", "redis://localhost:6379/0")
+
+        try:
+            self._client = redis.from_url(
+                redis_url,
+                decode_responses=True,
+            )
+            await self._client.ping()
+            logger.info("PlayerState: Redis connected")
+        except Exception as e:
+            logger.warning("PlayerState connection failed: %s", e)
+            self._client = None
+
+    def _get_key(self, uid: int) -> str:
+        """Получить ключ для игрока."""
+        return f"player:state:{uid}"
+
+    async def get_state(self, uid: int) -> Optional[dict]:
+        """Получить состояние игрока из Redis."""
+        if not self._client:
+            return None
+
+        try:
+            state = await self._client.hgetall(self._get_key(uid))
+            return state if state else None
+        except Exception as e:
+            logger.debug("PlayerState get error: %s", e)
+            return None
+
+    async def set_state(self, uid: int, **kwargs) -> bool:
+        """Установить состояние игрока."""
+        if not self._client:
+            return False
+
+        try:
+            await self._client.hset(self._get_key(uid), mapping=kwargs)
+            return True
+        except Exception as e:
+            logger.debug("PlayerState set error: %s", e)
+            return False
+
+    async def add_idle_xp(self, uid: int, amount: int, elf_bonus: float = 1.1) -> Optional[int]:
+        """
+        Атомарно добавить idle XP с учетом бонуса расы.
+        Использует Lua-скрипт для избежания race conditions.
+        """
+        if not self._client:
+            return None
+
+        try:
+            result = await self._client.eval(
+                LUA_ADD_IDLE_XP,
+                1,
+                self._get_key(uid),
+                amount,
+                elf_bonus
+            )
+            return int(result)
+        except Exception as e:
+            logger.debug("PlayerState add_idle_xp error: %s", e)
+            return None
+
+    async def sync_to_db(self, uid: int, **fields) -> bool:
+        """Синхронизировать поля в Redis с БД."""
+        if not self._client:
+            return False
+
+        try:
+            import json
+            await self._client.eval(
+                LUA_SYNC_TO_DB,
+                1,
+                self._get_key(uid),
+                json.dumps(fields)
+            )
+            return True
+        except Exception as e:
+            logger.debug("PlayerState sync_to_db error: %s", e)
+            return False
+
+    async def delete_state(self, uid: int) -> bool:
+        """Удалить состояние игрока (при выходе из idle)."""
+        if not self._client:
+            return False
+
+        try:
+            await self._client.delete(self._get_key(uid))
+            return True
+        except Exception as e:
+            logger.debug("PlayerState delete error: %s", e)
+            return False
+
+    async def init_from_player(self, player) -> bool:
+        """Инициализировать состояние из объекта Player."""
+        return await self.set_state(
+            player.uid,
+            uid=player.uid,
+            name=player.name,
+            race=player.race or "",
+            level=player.level,
+            idle_since=player.idle_since,
+            idle_xp=player.idle_xp,
+            online=str(player.online).lower(),
+        )
+
+    async def get_idle_xp(self, uid: int) -> int:
+        """Получить накопленный idle XP."""
+        if not self._client:
+            return 0
+
+        try:
+            xp = await self._client.hget(self._get_key(uid), "idle_xp")
+            return int(xp) if xp else 0
+        except Exception:
+            return 0
+
+    async def set_idle(self, uid: int, idle_since: int) -> bool:
+        """Перевести игрока в idle режим."""
+        return await self.set_state(
+            uid,
+            idle_since=idle_since,
+            idle_xp=0,
+            online="false"
+        )
+
+    async def set_idle_state(self, uid: int, idle_since: int, idle_xp: int) -> bool:
+        """Сохранить idle состояние в Redis."""
+        if not self._client:
+            return False
+        try:
+            await self._client.hset(self._get_key(uid), mapping={
+                "idle_since": idle_since,
+                "idle_xp": idle_xp
+            })
+            return True
+        except Exception as e:
+            logger.debug("set_idle_state error: %s", e)
+            return False
+
+    async def sync_idle_to_db(self, uid: int) -> bool:
+        """Синхронизировать idle состояние из Redis в БД."""
+        if not self._client:
+            return False
+        try:
+            state = await self._client.hgetall(self._get_key(uid))
+            if not state or not state.get("idle_xp"):
+                return False
+
+            from db import Player
+            player = await Player.objects.get(uid=uid)
+            player.idle_since = int(state.get("idle_since", 0))
+            player.idle_xp = int(state.get("idle_xp", 0))
+            await player.update(_columns=["idle_since", "idle_xp"])
+            return True
+        except Exception as e:
+            logger.error("sync_idle_to_db failed: %s", e)
+            return False

@@ -8,6 +8,12 @@ import json
 from pathlib import Path
 
 
+def active_skill_xp_threshold(level: int) -> int:
+    """Порог XP для следующего уровня активного скилла."""
+    import config as _cfg
+    return _cfg.ACTIVE_SKILL_LEVEL_UP_XP_BASE * level
+
+
 class SkillResult:
     """Результат выполнения скилла"""
     __slots__ = ('success', 'message', 'damage', 'healing', 'effect')
@@ -61,7 +67,7 @@ class ISkill(ABC):
         pass
     
     @abstractmethod
-    async def execute(self, user, target=None) -> SkillResult:
+    async def execute(self, user, target=None, lang: str = "ru") -> SkillResult:
         """Выполнить скилл"""
         pass
     
@@ -121,18 +127,19 @@ class AttackSkill(ISkill):
     name_ru = "Атака"
     name_en = "Attack"
     description = "Атаковать врага"
+    description_en = "Attack the enemy"
     cooldown = 0
     mana_cost = 0
     
-    async def execute(self, user, target=None) -> SkillResult:
+    async def execute(self, user, target=None, lang: str = "ru") -> SkillResult:
         if not target:
-            return SkillResult(False, "Нет цели!")
+            return SkillResult(False, "No target!" if lang == "en" else "Нет цели!")
         
         damage = user.get_dps()
         target.take_damage(damage)
         return SkillResult(
             True, 
-            f"Нанесено {damage} урона!",
+            f"Dealt {damage} damage!" if lang == "en" else f"Нанесено {damage} урона!",
             damage=damage
         )
 
@@ -144,17 +151,18 @@ class HealSkill(ISkill):
     name_ru = "Лечение"
     name_en = "Heal"
     description = "Восстановить 30% HP"
+    description_en = "Restore 30% HP"
     cooldown = 30
     mana_cost = 10
     
-    async def execute(self, user, target=None) -> SkillResult:
+    async def execute(self, user, target=None, lang: str = "ru") -> SkillResult:
         heal = int(user.max_hp * 0.3)
         actual_heal = min(heal, user.max_hp - user.hp)
         user.hp += actual_heal
         
         return SkillResult(
             True,
-            f"Восстановлено {actual_heal} HP!",
+            f"Restored {actual_heal} HP!" if lang == "en" else f"Восстановлено {actual_heal} HP!",
             healing=actual_heal
         )
 
@@ -166,22 +174,23 @@ class SmiteSkill(ISkill):
     name_ru = "Смайт"
     name_en = "Smite"
     description = "Божественный удар (для добрых)"
+    description_en = "Divine strike (for good characters)"
     cooldown = 60
     mana_cost = 20
     
-    async def execute(self, user, target=None) -> SkillResult:
+    async def execute(self, user, target=None, lang: str = "ru") -> SkillResult:
         if user.align != 1:
-            return SkillResult(False, "Только добрые могут использовать Смайт!")
+            return SkillResult(False, "Only good characters can use Smite!" if lang == "en" else "Только добрые могут использовать Смайт!")
         
         if not target:
-            return SkillResult(False, "Нет цели!")
+            return SkillResult(False, "No target!" if lang == "en" else "Нет цели!")
         
         damage = user.get_dps() * 2
         target.take_damage(damage)
         
         return SkillResult(
             True,
-            f"✨ СМАЙТ! Нанесено {damage} урона!",
+            f"✨ SMITE! Dealt {damage} damage!" if lang == "en" else f"✨ СМАЙТ! Нанесено {damage} урона!",
             damage=damage,
             effect="smite"
         )
@@ -194,52 +203,48 @@ class FireballSkill(ISkill):
     name_ru = "Огненный шар"
     name_en = "Fireball"
     description = "Атака огнём"
+    description_en = "Fire attack"
     cooldown = 45
     mana_cost = 15
     
-    async def execute(self, user, target=None) -> SkillResult:
+    async def execute(self, user, target=None, lang: str = "ru") -> SkillResult:
         if not target:
-            return SkillResult(False, "Нет цели!")
+            return SkillResult(False, "No target!" if lang == "en" else "Нет цели!")
         
         damage = int(user.get_dps() * 1.5)
         target.take_damage(damage)
         
         return SkillResult(
             True,
-            f"🔥 Огненный шар наносит {damage} урона!",
+            f"🔥 Fireball deals {damage} damage!" if lang == "en" else f"🔥 Огненный шар наносит {damage} урона!",
             damage=damage,
             effect="fire"
         )
 
 
-# === Регистрация скиллов ===
+# === Регистрация скиллов (авто при импорте) ===
 
-def register_default_skills():
-    """Зарегистрировать все скиллы при старте"""
-    SkillRegistry.register(AttackSkill())
-    SkillRegistry.register(HealSkill())
-    SkillRegistry.register(SmiteSkill())
-    SkillRegistry.register(FireballSkill())
+SkillRegistry.register(AttackSkill())
+SkillRegistry.register(HealSkill())
+SkillRegistry.register(SmiteSkill())
+SkillRegistry.register(FireballSkill())
 
 
 # === Утилита для использования ===
 
-async def use_skill(skill_name: str, user, target=None) -> SkillResult:
+async def use_skill(skill_name: str, user, target=None, lang: str = "ru") -> SkillResult:
     """Использовать скилл — основная точка входа"""
     skill = SkillRegistry.get(skill_name)
     
     if not skill:
-        return SkillResult(False, f"Неизвестный скилл: {skill_name}")
+        return SkillResult(False, f"Unknown skill: {skill_name}" if lang == "en" else f"Неизвестный скилл: {skill_name}")
     
     if skill_name not in SkillRegistry._enabled:
-        return SkillResult(False, "Скилл недоступен")
+        return SkillResult(False, "Skill not available" if lang == "en" else "Скилл недоступен")
     
-    return await skill.execute(user, target)
+    return await skill.execute(user, target, lang=lang)
 
 
-# === Пример: добавление нового скилла без изменения handlers ===
-
-# game/skills/custom.py
 class PoisonDartSkill(ISkill):
     """Ядовитый дротик — новый скилл"""
     
@@ -247,25 +252,149 @@ class PoisonDartSkill(ISkill):
     name_ru = "Ядовитый дротик"
     name_en = "Poison Dart"
     description = "Отравляет врага"
+    description_en = "Poisons the enemy"
     cooldown = 40
     mana_cost = 12
     
-    async def execute(self, user, target=None) -> SkillResult:
+    async def execute(self, user, target=None, lang: str = "ru") -> SkillResult:
         if not target:
-            return SkillResult(False, "Нет цели!")
+            return SkillResult(False, "No target!" if lang == "en" else "Нет цели!")
         
         damage = int(user.get_dps() * 0.8)
         target.take_damage(damage)
-        # Добавляем эффект яда
-        target.apply_effect("poison", 3)  # 3 раунда
         
         return SkillResult(
             True,
-            f"☠️ Ядовитый дротик! {damage} урона + отравление",
+            f"☠️ Poison Dart! {damage} damage + poison" if lang == "en" else f"☠️ Ядовитый дротик! {damage} урона + отравление",
             damage=damage,
             effect="poison"
         )
 
 
-# Один раз зарегистрировать — и всё работает!
+class PurifyingLightSkill(ISkill):
+    """Очищающий свет — навык расы Human"""
+    name = "purifying_light"
+    name_ru = "Очищающий свет"
+    name_en = "Purifying Light"
+    description = "Лечение HP"
+    description_en = "Heal HP"
+    cooldown = 90
+    mana_cost = 20
+
+    @staticmethod
+    def get_heal_pct(level: int) -> float:
+        return min(0.50, 0.25 + (level - 1) * 0.01)
+
+    async def execute(self, user, target=None, lang: str = "ru") -> SkillResult:
+        lvl = 1
+        try:
+            from db import PlayerActiveSkill
+            rec = await PlayerActiveSkill.objects.filter(
+                player_uid=user.uid, skill_id=self.name
+            ).get_or_none()
+            if rec:
+                lvl = rec.level
+        except Exception:
+            pass
+        pct = self.get_heal_pct(lvl)
+        heal = int(user.max_hp * pct)
+        actual_heal = min(heal, user.max_hp - user.hp)
+        user.hp += actual_heal
+        return SkillResult(
+            True,
+            f"✨ Purifying Light Lv.{lvl}: +{actual_heal} HP!"
+            if lang == "en"
+            else f"✨ Очищающий свет Lv.{lvl}: +{actual_heal} HP!",
+            healing=actual_heal
+        )
+
+
+class SeismicSlamSkill(ISkill):
+    """Сейсмический удар — навык расы Dwarf"""
+    name = "seismic_slam"
+    name_ru = "Сейсмический удар"
+    name_en = "Seismic Slam"
+    description = "Мощный удар"
+    description_en = "Powerful strike"
+    cooldown = 60
+    mana_cost = 25
+
+    @staticmethod
+    def get_damage_mult(level: int) -> float:
+        return min(4.0, 2.0 + (level - 1) * 0.1)
+
+    async def execute(self, user, target=None, lang: str = "ru") -> SkillResult:
+        if not target:
+            return SkillResult(False, "No target!" if lang == "en" else "Нет цели!")
+        lvl = 1
+        try:
+            from db import PlayerActiveSkill
+            rec = await PlayerActiveSkill.objects.filter(
+                player_uid=user.uid, skill_id=self.name
+            ).get_or_none()
+            if rec:
+                lvl = rec.level
+        except Exception:
+            pass
+        mult = self.get_damage_mult(lvl)
+        damage = int(user.get_dps() * mult)
+        target.take_damage(damage)
+        return SkillResult(
+            True,
+            f"💥 Seismic Slam Lv.{lvl}: {damage} dmg (x{mult})!"
+            if lang == "en"
+            else f"💥 Сейсмический удар Lv.{lvl}: {damage} урона (x{mult})!",
+            damage=damage,
+            effect="stun"
+        )
+
+
+class QuickVolleySkill(ISkill):
+    """Быстрый залп — навык расы Elf"""
+    name = "quick_volley"
+    name_ru = "Быстрый залп"
+    name_en = "Quick Volley"
+    description = "3 быстрых атаки"
+    description_en = "3 quick attacks"
+    cooldown = 45
+    mana_cost = 15
+
+    @staticmethod
+    def get_hit_mult(level: int) -> float:
+        return min(1.0, 0.6 + (level - 1) * 0.02)
+
+    async def execute(self, user, target=None, lang: str = "ru") -> SkillResult:
+        if not target:
+            return SkillResult(False, "No target!" if lang == "en" else "Нет цели!")
+        lvl = 1
+        try:
+            from db import PlayerActiveSkill
+            rec = await PlayerActiveSkill.objects.filter(
+                player_uid=user.uid, skill_id=self.name
+            ).get_or_none()
+            if rec:
+                lvl = rec.level
+        except Exception:
+            pass
+        mult = self.get_hit_mult(lvl)
+        base_dmg = user.get_dps()
+        total_dmg = 0
+        for i in range(3):
+            hit = int(base_dmg * mult)
+            target.take_damage(hit)
+            total_dmg += hit
+        return SkillResult(
+            True,
+            f"🏹 Quick Volley Lv.{lvl}: 3×{mult:.1f} = {total_dmg} dmg!"
+            if lang == "en"
+            else f"🏹 Быстрый залп Lv.{lvl}: 3×{mult:.1f} = {total_dmg} урона!",
+            damage=total_dmg,
+            effect="multi_strike"
+        )
+
+
+# PoisonDartSkill — авторегистрация
 SkillRegistry.register(PoisonDartSkill())
+SkillRegistry.register(PurifyingLightSkill())
+SkillRegistry.register(SeismicSlamSkill())
+SkillRegistry.register(QuickVolleySkill())
