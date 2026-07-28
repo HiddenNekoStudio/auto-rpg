@@ -15,6 +15,7 @@ from bot import ctime, item_string, format_short
 from i18n import t, tip
 from core.cache import TTLCache
 from core.telegram_utils import safe_edit
+from ui.format import esc
 from plugins.vip_shop import get_prestige_bonus, has_active_xp_boost, has_active_speed_boost, has_active_protect
 from data.locations import format_location
 
@@ -58,6 +59,7 @@ def main_menu_keyboard(lang: str = "ru"):
             InlineKeyboardButton(t(lang, "btn_settings"), callback_data="menu_settings"),
         ],
         [
+            InlineKeyboardButton(t(lang, "btn_stats"), callback_data="menu_stats"),
             InlineKeyboardButton(t(lang, "btn_info"),  callback_data="menu_info"),
         ],
     ])
@@ -104,6 +106,24 @@ def onboarding_align_keyboard(lang: str = "ru"):
             InlineKeyboardButton(t(lang, "align_neutral"), callback_data="onboard_align_0"),
             InlineKeyboardButton(t(lang, "align_evil"),    callback_data="onboard_align_2"),
         ],
+    ])
+
+
+def character_hub_keyboard(lang: str = "ru", player=None):
+    """Клавиатура хаба персонажа — текущее состояние + кнопки изменения."""
+    race_name  = _race_display(player) if player else ""
+    job_name   = _class_display(player) if player else ""
+    align_name = _align_str(player) if player else ""
+    back_label = t(lang, "back")
+    race_label = "раса" if lang != "en" else "race"
+    class_label = "класс" if lang != "en" else "class"
+    align_label = "мировоззрение" if lang != "en" else "alignment"
+
+    return InlineKeyboardMarkup([
+        [InlineKeyboardButton(f"{race_name} — {race_label}", callback_data="char_race")],
+        [InlineKeyboardButton(f"{job_name} — {class_label}", callback_data="char_class")],
+        [InlineKeyboardButton(f"{align_name} — {align_label}", callback_data="char_align")],
+        [InlineKeyboardButton(back_label, callback_data="menu_profile")],
     ])
 
 
@@ -160,7 +180,7 @@ async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         lang = player.lang
         await update.message.reply_text(
             t(lang, "choose_race"),
-            parse_mode="Markdown",
+            parse_mode="HTML",
             reply_markup=race_keyboard(lang),
         )
         return
@@ -169,7 +189,7 @@ async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         lang = player.lang
         await update.message.reply_text(
             t(lang, "choose_class"),
-            parse_mode="Markdown",
+            parse_mode="HTML",
             reply_markup=class_keyboard(lang),
         )
         return
@@ -260,7 +280,7 @@ async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 )
                 await act.save()
 
-    await update.message.reply_text(text, parse_mode="Markdown",
+    await update.message.reply_text(text, parse_mode="HTML",
                                     reply_markup=main_menu_keyboard(lang))
 
 
@@ -283,10 +303,10 @@ async def callback_set_lang(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     # После выбора языка — если раса ещё не выбрана, показываем выбор расы
     if not player.race:
-        await safe_edit(query, t(lang, "choose_race"), parse_mode="Markdown",
+        await safe_edit(query, t(lang, "choose_race"), parse_mode="HTML",
                         reply_markup=race_keyboard(lang))
         return
-    await safe_edit(query, t(lang, "lang_set"), parse_mode="Markdown",
+    await safe_edit(query, t(lang, "lang_set"), parse_mode="HTML",
                     reply_markup=main_menu_keyboard(lang))
 
 
@@ -303,144 +323,126 @@ def _align_str(player) -> str:
 
 
 async def _profile_text_async(player) -> str:
-    """Асинхронная версия профиля с подсчётом квестов.
-    
-    ПОЧЕМУ: объединённая функция — нет дублирования с sync версией
-    """
-    from db import PlayerQuest
-    
+    """Новый профиль — карточка персонажа. HTML mode."""
+    from db import PlayerQuest, ClanMember, Clan
+    from ui.icons import SEP, ONLINE, OFFLINE, IDLE, GOLD, BOLT, STAR, LEVEL_UP, MAP, SLOT as SLOT_ICON
+    from ui.bars import hp_bar, mp_bar, skill_bar
+
     lang = player.lang or "ru"
     nextlevel = max(1, player.nextxp - player.currentxp)
     align     = _align_str(player)
-    
-    qstring = t(lang, "on_quest") if player.onquest else t(lang, "not_on_quest")
-    
-    # Подсчёт квестов
+
+    if player.online:
+        status_icon = ONLINE
+    elif player.idle_since > 0:
+        status_icon = IDLE
+    else:
+        status_icon = OFFLINE
+
+    # ── Header ──
+    lines = [f"{status_icon} <b>{esc(player.name)}</b>", SEP]
+
+    # ── Identity ──
+    race_name = _race_display(player)
+    job_name  = _class_display(player)
+
+    lines.append(f"🎖️ {'Уровень' if lang != 'en' else 'Level'}: {player.level}")
+    lines.append(f"🧬 {'Раса' if lang != 'en' else 'Race'}: {race_name}")
+    lines.append(f"💼 {'Класс' if lang != 'en' else 'Class'}: {job_name}")
+    lines.append(f"⚖️ {'Мировоззрение' if lang != 'en' else 'Alignment'}: {align}")
+
+    # Clan lookup
+    cm = await ClanMember.objects.filter(player_uid=player.uid).get_or_none()
+    if cm:
+        clan = await Clan.objects.get_or_none(id=cm.clan_id)
+        if clan:
+            tag = f" [{clan.tag}]" if clan.tag else ""
+            lines.append(f"🏰 {'Клан' if lang != 'en' else 'Clan'}: {clan.name}{tag}")
+
+    # ── Combat summary (HP/MP/Def/DPS/DR) ──
+    player_hp    = max(1, player.hp or player.get_max_hp())
+    player_max_hp = max(1, player.max_hp or player.get_max_hp())
+    player_mp    = max(1, player.mp or player.get_max_mp())
+    player_max_mp = max(1, player.max_mp or player.get_max_mp())
+    defense      = player.get_defense()
+    dps          = player.get_dps()
+    dr_pct       = int(player.get_defense_reduction() * 100)
+
+    lines.append(f"❤️ <b>{player_hp}</b>/{player_max_hp} {hp_bar(player_hp, player_max_hp)}")
+    lines.append(f"💧 <b>{player_mp}</b>/{player_max_mp} {mp_bar(player_mp, player_max_mp)}")
+    lines.append(f"🛡️ Def: {defense}  ⚔️ DPS: {dps}  🛡️ DR: {dr_pct}%")
+
+    lines.append(SEP)
+
+    # ── Economy & Progression ──
+    lines.append(f"💰 <b>{format_short(player.gold)}</b>  ⚡ <b>{format_short(player.totalxp)}</b> XP  🎫 <b>{player.tokens}</b>")
+    lines.append(f"⏱️ {ctime(nextlevel, lang)} {'→ ур.' if lang != 'en' else '→ lvl.'} {player.level + 1}")
+
+    lines.append(SEP)
+
+    # ── Combat stats ──
+    wins = player.wins or 0
+    loss = player.loss or 0
+
+    lines.append(f"⚔️ {'Дуэли' if lang != 'en' else 'Duels'}: {wins}{'П' if lang != 'en' else 'W'} / {loss}{'П' if lang != 'en' else 'L'}")
+    lines.append(f"🐾 {'Монстры' if lang != 'en' else 'Monsters'}: 👹 {player.monster_kills or 0}  /  💀 {player.monster_deaths or 0}")
+
+    # ── Location ──
+    location_str = format_location(player.x, player.y, lang)
+    if location_str:
+        lines.append(f"📍 {'Позиция' if lang != 'en' else 'Location'}: ({player.x}, {player.y}) — {location_str}")
+    else:
+        lines.append(f"📍 {'Позиция' if lang != 'en' else 'Location'}: ({player.x}, {player.y})")
+
+    # ── Quests ──
     active_quests = await PlayerQuest.objects.filter(
-        player_uid=player.uid,
-        status="active"
+        player_uid=player.uid, status="active"
     ).count()
     completed_quests = await PlayerQuest.objects.filter(
-        player_uid=player.uid,
-        status="completed"
+        player_uid=player.uid, status="completed"
     ).count()
-    
-    duel_str  = (t(lang, "profile_duels", wins=player.wins, loss=player.loss)) if cfg.ENABLE_COMBAT else ""
-    race_str = _race_display(player)
-    location_str = format_location(player.x, player.y, lang)
-    if player.online:
-        status = t(lang, "online")
-    elif player.idle_since > 0:
-        status = t(lang, "idle")
-    else:
-        status = t(lang, "offline")
-    text = t(lang, "profile_title", name=player.name, status=status) + "\n"
-    
-    if player.idle_since > 0:
-        idle_time = int(time.time()) - player.idle_since
-        duration_str = ctime(idle_time, lang)
-        text += f"💤 Idle: {duration_str} | ⏸️ +{format_short(player.idle_xp)} XP\n"
-    
-    text += (
-        t(lang, "profile_level", level=player.level) + "\n"
-        + t(lang, "profile_race", race=race_str) + "\n"
-        + t(lang, "profile_job", job=_class_display(player)) + "\n"
-        + t(lang, "profile_align", align=align) + "\n"
-        + t(lang, "profile_gold", gold=format_short(player.gold)) + "\n"
-        + t(lang, "profile_xp", xp=format_short(player.totalxp)) + "\n"
-        + t(lang, "profile_tokens", tokens=player.tokens) + "\n"
-        + t(lang, "profile_nextlvl", time=ctime(nextlevel, lang)) + "\n"
-        + t(lang, "profile_total", time=ctime(player.totalxp, lang)) + "\n"
-        + duel_str + "\n"
-        + t(lang, "profile_monsters") + f" 👹 {player.monster_kills or 0} / 💀 {player.monster_deaths or 0}\n"
-    )
+    lines.append(f"🎯 {'Квест' if lang != 'en' else 'Quest'}: {active_quests}  |  📩 {'завершено' if lang != 'en' else 'done'}: {completed_quests}")
 
-    # Позиция игрока
-    pos_label = "Position:" if lang == "en" else "Позиция:"
-    if location_str:
-        text += f"📍 {pos_label} ({player.x}, {player.y}) - {location_str}\n"
-    else:
-        text += f"📍 {pos_label} ({player.x}, {player.y})\n"
+    lines.append(SEP)
 
-    # Квесты
-    quest_label = "Quest:" if lang == "en" else "Квест:"
-    done_label = "done:" if lang == "en" else "завершено:"
-    quest_status = f"🎯 {quest_label} {active_quests} | 📩 {done_label} {completed_quests}"
-    text += quest_status + "\n"
-    text += "━━━━━━━━━━━━━━━━━━\n"
-
-    # HP и MP bar
-    player_hp = max(1, player.hp or player.get_max_hp())
-    player_max_hp = max(1, player.max_hp or player.get_max_hp())
-    player_mp = max(1, player.mp or player.get_max_mp())
-    player_max_mp = max(1, player.max_mp or player.get_max_mp())
-
-    hp_pct = int((player_hp / player_max_hp) * 10)
-    mp_pct = int((player_mp / player_max_mp) * 10)
-    hp_bar = "█" * hp_pct + "░" * (10 - hp_pct)
-    mp_bar = "▓" * mp_pct + "░" * (10 - mp_pct)
-
-    text += f"🛡️ Def: {player.get_defense()} | ⚔️ DPS: {player.get_dps()}\n"
-    text += f"📊 HP: [{hp_bar}] {player_hp}/{player_max_hp}\n"
-    text += f"💧 MP: [{mp_bar}] {player_mp}/{player_max_mp}\n"
-    text += "━━━━━━━━━━━━━━━━━━\n"
-
-    # Prestige display (после HP/MP)
+    # ── Prestige ──
     if player.prestige_count and player.prestige_count > 0:
         per_level, max_bonus = get_prestige_bonus()
-        
-        xp_level = player.prestige_xp_level or 0
-        gold_level = player.prestige_gold_level or 0
-        
-        xp_percent = min(xp_level * per_level, max_bonus)
+        xp_level    = player.prestige_xp_level or 0
+        gold_level  = player.prestige_gold_level or 0
+        xp_percent  = min(xp_level * per_level, max_bonus)
         gold_percent = min(gold_level * per_level, max_bonus)
-        
-        text += f"⭐ Prestige: x{player.prestige_count}\n"
-        text += f"⚡ XP: Lv.{xp_level} (+{xp_percent}%)\n"
-        text += f"💰 Gold: Lv.{gold_level} (+{gold_percent}%)\n"
-    
-    # Бусты (VIP)
+        lines.append(f"⭐ Prestige: x{player.prestige_count}")
+        lines.append(f"⚡ XP: Lv.{xp_level} (+{xp_percent}%)  💰 Gold: Lv.{gold_level} (+{gold_percent}%)")
+
+    # ── Active boosts ──
     active_boosts = []
     now = int(time.time())
-    
     if has_active_xp_boost(player):
         remaining = player.xp_boost_until - now
         if remaining > 0:
             active_boosts.append(f"⚡ XP x2 ({ctime(remaining, lang)})")
-    
     if has_active_speed_boost(player):
         remaining = player.speed_boost_until - now
         if remaining > 0:
             active_boosts.append(f"🏃 Speed x2 ({ctime(remaining, lang)})")
-    
     if has_active_protect(player):
         remaining = player.protect_until - now
         if remaining > 0:
-            active_boosts.append(f"🛡️ {'Protect' if lang != 'ru' else 'Защита'} ({ctime(remaining, lang)})")
-    
+            active_boosts.append(f"🛡️ {'Защита' if lang != 'en' else 'Protect'} ({ctime(remaining, lang)})")
     if active_boosts:
-        text += "💎 " + " | ".join(active_boosts) + "\n"
-    
-    # Сепаратор
-    text += "━━━━━━━━━━━━━━━━━━\n"
-    alert_status = t(lang, "notif_on") if player.optin else t(lang, "notif_off")
-    notif_label = "Уведомления" if lang == "ru" else "Notifications"
-    text += f"{notif_label}: {alert_status}\n"
-    if player.auto_quest_unlocked:
-        autoquest_mode = player.auto_accept_quests or "off"
-        autoquest_name = t(lang, f"autoquest_{autoquest_mode}")
-        autoquest_label = "Авто-квесты" if lang == "ru" else "Auto-quests"
-        text += f"{autoquest_label}: {autoquest_name}\n"
-    else:
-        autoquest_label = "Авто-квесты" if lang == "ru" else "Auto-quests"
-        text += f"{autoquest_label}: 🔒\n"
-    text += "━━━━━━━━━━━━━━━━━━\n"
-    text += t(lang, "profile_gear") + "\n"
+        lines.append("💎 " + " | ".join(active_boosts))
+
+    lines.append(SEP)
+
+    # ── Equipment ──
+    lines.append(f"🎒 <b>{'Снаряжение' if lang != 'en' else 'Equipment'}</b>")
     for slot in cfg.WEAPON_SLOTS:
         item = getattr(player, slot)
         if item:
-            text += f"{SLOT_EMOJI.get(slot, '•')} {item_string(item, lang)}\n"
+            lines.append(f"{SLOT_ICON.get(slot, '•')} {item_string(item, lang)}")
 
+    # ── Racial skills ──
     from game.skills.passives.registry import PassiveSkillRegistry
     from game.skills.passives import PassiveRegistry
     from game.skills.passives.base import xp_threshold_for_level
@@ -448,42 +450,34 @@ async def _profile_text_async(player) -> str:
     from game.skills.base import active_skill_xp_threshold
 
     racial_passive_id = cfg.RACIAL_PASSIVES.get(player.race or "")
-    racial_active_id = cfg.RACIAL_ACTIVE_SKILLS.get(player.race or "")
+    racial_active_id  = cfg.RACIAL_ACTIVE_SKILLS.get(player.race or "")
 
-    # ── Расовые навыки ──
     has_racial = False
     if racial_passive_id or racial_active_id:
-        racial_label = "🧬 *Расовые навыки*\n" if lang != "en" else "🧬 *Racial Skills*\n"
         racial_lines = []
         if racial_passive_id:
             rp = await PlayerPassive.objects.filter(
-                player_uid=player.uid,
-                passive_id=racial_passive_id
+                player_uid=player.uid, passive_id=racial_passive_id
             ).get_or_none()
             if not rp:
                 rp = PlayerPassive(
-                    player_uid=player.uid,
-                    passive_id=racial_passive_id,
-                    level=1, xp_progress=0,
-                    equipped=True,
+                    player_uid=player.uid, passive_id=racial_passive_id,
+                    level=1, xp_progress=0, equipped=True,
                     acquired_at=int(time.time()),
                 )
                 await rp.save()
             effect = PassiveRegistry.get(racial_passive_id)
             if effect:
                 name = effect.get_name(lang)
-                racial_lines.append(
-                    f"{effect.icon} [П] {name} Lv.{rp.level} 🟢"
-                )
+                racial_lines.append(f"{effect.icon} [{'П' if lang != 'en' else 'P'}] {name} Lv.{rp.level} 🟢")
                 has_racial = True
         if racial_active_id:
             active_skill = ActiveSkillRegistry.get(racial_active_id)
             if active_skill:
                 sname = active_skill.get_display_name(lang)
-                cd = active_skill.cooldown
-                mp = active_skill.mana_cost
-                desc = active_skill.description_en if lang == "en" else active_skill.description
-                # Get level + XP bar
+                cd    = active_skill.cooldown
+                mp    = active_skill.mana_cost
+                desc  = active_skill.description_en if lang == "en" else active_skill.description
                 from db import PlayerActiveSkill
                 as_rec = await PlayerActiveSkill.objects.filter(
                     player_uid=player.uid, skill_id=racial_active_id
@@ -495,55 +489,107 @@ async def _profile_text_async(player) -> str:
                         acquired_at=int(time.time()),
                     )
                     await as_rec.save()
-                as_lv = as_rec.level
+                as_lv  = as_rec.level
                 as_thr = active_skill_xp_threshold(as_lv)
-                as_xp = as_rec.xp_progress
-                bar_len = 8
-                filled = min(bar_len, int((as_xp / as_thr) * bar_len) if as_thr > 0 else 0)
-                bar = "█" * filled + "░" * (bar_len - filled)
+                as_xp  = as_rec.xp_progress
+                bar    = skill_bar(as_xp, as_thr)
                 racial_lines.append(
-                    f"✨ А {sname} Lv.{as_lv} ✅ {bar} {as_xp}/{as_thr}\n"
-                    f"   🤍 {desc} (КД: {cd}с, MP: {mp})"
+                    f"✨ {'А' if lang != 'en' else 'A'} {sname} Lv.{as_lv} {bar} {as_xp}/{as_thr}\n"
+                    f"   🤍 {desc} ({'КД' if lang != 'en' else 'CD'}: {cd}{'с' if lang != 'en' else ''}, MP: {mp})"
                 )
                 has_racial = True
         if has_racial:
-            text += "━━━━━━━━━━━━━━━━━━\n"
-            text += racial_label
-            text += "\n".join(racial_lines) + "\n"
+            lines.append(SEP)
+            lines.append(f"🧬 <b>{'Расовые навыки' if lang != 'en' else 'Racial Skills'}</b>")
+            lines.extend(racial_lines)
 
-    # ── Экипированные пассивки (кроме расовых) ──
+    # ── Equipped passives ──
     equipped_passives = await PassiveSkillRegistry.get_equipped_passives(player.uid)
     non_racial_equipped = [ep for ep in equipped_passives if ep.passive_id != racial_passive_id]
     if non_racial_equipped:
-        text += "━━━━━━━━━━━━━━━━━━\n"
-        text += ("🎯 *Пассивные навыки*\n" if lang != "en" else "🎯 *Passive Skills*\n")
+        lines.append(SEP)
+        lines.append(f"🎯 <b>{'Пассивные навыки' if lang != 'en' else 'Passive Skills'}</b>")
         for ep in non_racial_equipped:
             effect = PassiveRegistry.get(ep.passive_id)
             if not effect:
                 continue
-            name = effect.get_name(lang)
-            level = ep.level
+            name      = effect.get_name(lang)
+            level     = ep.level
             threshold = xp_threshold_for_level(level)
-            xp = ep.xp_progress
-            bar_len = 8
-            filled = min(bar_len, int((xp / threshold) * bar_len) if threshold > 0 else 0)
-            bar = "█" * filled + "░" * (bar_len - filled)
-            text += f"{effect.icon} {name} Lv.{level}\n[{bar}] {xp}/{threshold}\n"
-    else:
-        all_passives = await PassiveSkillRegistry.get_all_passives(player.uid)
-        non_racial_all = [ep for ep in all_passives if ep.passive_id != racial_passive_id]
-        if non_racial_all:
-            text += "━━━━━━━━━━━━━━━━━━\n"
-            for ep in non_racial_all:
-                effect = PassiveRegistry.get(ep.passive_id)
-                if not effect:
-                    continue
-                name = effect.get_name(lang)
-                level = ep.level
-                status = "⚔️" if ep.equipped else "📦"
-                text += f"{status} {effect.icon} {name} Lv.{level}\n"
+            xp        = ep.xp_progress
+            bar       = skill_bar(xp, threshold)
+            lines.append(f"{effect.icon} {name} Lv.{level}  {bar} {xp}/{threshold}")
 
-    return text
+    return "\n".join(lines)
+
+
+async def _stats_text_async(player) -> str:
+    """Детальная статистика персонажа — HTML mode."""
+    from db import PlayerQuest
+    from ui.icons import SEP
+
+    lang = player.lang or "ru"
+    now  = int(time.time())
+
+    lines = [t(lang, "stats_title"), SEP]
+
+    # ── Account age ──
+    account_age_days = max(0, (now - player.created) // 86400) if player.created else 0
+    lines.append(t(lang, "stats_account", days=account_age_days))
+
+    # ── Playtime ──
+    total_online  = player.total_online_seconds or 0
+    total_idle    = player.total_idle_seconds or 0
+    total_offline = player.total_offline_seconds or 0
+    total_play    = total_online + total_idle
+
+    lines.append(t(lang, "stats_playtime", time=ctime(total_play, lang)))
+    lines.append(t(lang, "stats_online", time=ctime(total_online, lang)))
+    lines.append(t(lang, "stats_idle",   time=ctime(total_idle, lang)))
+    lines.append(t(lang, "stats_offline", time=ctime(total_offline, lang)))
+
+    lines.append(SEP)
+
+    # ── Combat ──
+    wins = player.wins or 0
+    loss = player.loss or 0
+    total_fights = wins + loss
+    win_rate = int(wins / total_fights * 100) if total_fights > 0 else 0
+    streak = player.fight_streak or 0
+
+    lines.append(t(lang, "stats_fights", total=total_fights))
+    lines.append(t(lang, "stats_win_rate", rate=win_rate))
+    lines.append(t(lang, "stats_best_streak", streak=streak))
+    lines.append(t(lang, "stats_kills", kills=player.monster_kills or 0))
+    lines.append(t(lang, "stats_deaths", deaths=player.monster_deaths or 0))
+
+    lines.append(SEP)
+
+    # ── Quests & damage reduction ──
+    completed_quests = await PlayerQuest.objects.filter(
+        player_uid=player.uid, status="completed"
+    ).count()
+    dr_pct = int(player.get_defense_reduction() * 100)
+
+    lines.append(t(lang, "stats_quests", count=completed_quests))
+    lines.append(t(lang, "stats_dr", dr=dr_pct))
+
+    # ── XP lost ──
+    if player.totalxplost:
+        lines.append(t(lang, "stats_xp_lost", xp=format_short(player.totalxplost)))
+
+    lines.append(SEP)
+
+    # ── Last login ──
+    if player.lastlogin:
+        ago = now - player.lastlogin
+        if ago < 86400:
+            login_str = ctime(ago, lang) + (" назад" if lang != 'en' else " ago")
+        else:
+            login_str = ctime(ago, lang) + (" назад" if lang != 'en' else " ago")
+        lines.append(t(lang, "stats_last_login", time=login_str))
+
+    return "\n".join(lines)
 
 
 async def cmd_profile(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -559,20 +605,16 @@ async def cmd_profile(update: Update, context: ContextTypes.DEFAULT_TYPE):
             InlineKeyboardButton(t(lang, "btn_quest"), callback_data="menu_quest"),
         ],
         [
-            InlineKeyboardButton(t(lang, "btn_align"), callback_data="align_menu"),
-            InlineKeyboardButton(t(lang, "btn_job"),   callback_data="job_prompt"),
-        ],
-        [
+            InlineKeyboardButton("🏪 Магазин" if lang != "en" else "🏪 Shop", callback_data="menu_shop"),
             InlineKeyboardButton("🎯 Навыки" if lang != "en" else "🎯 Skills", callback_data="menu_passives"),
-            InlineKeyboardButton(t(lang, "btn_race"), callback_data="menu_race"),
         ],
         [
-            InlineKeyboardButton("🏪 Магазин" if lang != "en" else "🏪 Shop", callback_data="menu_pull"),
+            InlineKeyboardButton(t(lang, "btn_character"), callback_data="char_hub"),
         ],
         [InlineKeyboardButton(t(lang, "menu"), callback_data="menu_back")],
     ])
     player = await Player.objects.get(uid=player.uid)
-    await update.message.reply_text(await _profile_text_async(player), parse_mode="Markdown",
+    await update.message.reply_text(await _profile_text_async(player), parse_mode="HTML",
                                     reply_markup=keyboard)
 
 
@@ -653,7 +695,7 @@ async def callback_set_race(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     race_name = _race_display(player)
     await safe_edit(query, t(lang, "race_set", race=race_name),
-                    parse_mode="Markdown",
+                    parse_mode="HTML",
                     reply_markup=class_keyboard(lang) if not player.onboarding_done else main_menu_keyboard(lang))
 
 
@@ -680,10 +722,10 @@ async def callback_set_class(update: Update, context: ContextTypes.DEFAULT_TYPE)
     await player.update(_columns=["job"])
     if not player.onboarding_done:
         await safe_edit(query, t(lang, "class_set", class_name=class_display(class_name, lang)),
-                        parse_mode="Markdown", reply_markup=onboarding_align_keyboard(lang))
+                        parse_mode="HTML", reply_markup=onboarding_align_keyboard(lang))
     else:
         await safe_edit(query, t(lang, "class_changed", class_name=class_display(class_name, lang)),
-                        parse_mode="Markdown", reply_markup=main_menu_keyboard(lang))
+                        parse_mode="HTML", reply_markup=main_menu_keyboard(lang))
 
 
 async def callback_onboarding_align(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -714,7 +756,7 @@ async def callback_onboarding_align(update: Update, context: ContextTypes.DEFAUL
         align_str = t(lang, "align_neutral")
     if lang == "en":
         text = (
-            f"⚔️ *Welcome, {player.name}!*\n\n"
+            f"⚔️ <b>Welcome, {esc(player.name)}!</b>\n\n"
             f"🧬 Race: {race_str}\n"
             f"💼 Class: {job_str}\n"
             f"⚖️ Alignment: {align_str}\n\n"
@@ -723,14 +765,14 @@ async def callback_onboarding_align(update: Update, context: ContextTypes.DEFAUL
         )
     else:
         text = (
-            f"⚔️ *Добро пожаловать, {player.name}!*\n\n"
+            f"⚔️ <b>Добро пожаловать, {esc(player.name)}!</b>\n\n"
             f"🧬 Раса: {race_str}\n"
             f"💼 Класс: {job_str}\n"
             f"⚖️ Мировоззрение: {align_str}\n\n"
             "🔥 Твой герой готов к приключениям!\n"
             + t(lang, "info_commands")
         )
-    await safe_edit(query, text, parse_mode="Markdown",
+    await safe_edit(query, text, parse_mode="HTML",
                     reply_markup=main_menu_keyboard(lang))
 
 
@@ -749,7 +791,7 @@ async def callback_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if action == "menu_back":
         name = player.name if player else user.full_name
         await safe_edit(query, t(lang, "main_menu", name=name),
-                        parse_mode="Markdown", reply_markup=main_menu_keyboard(lang))
+                        parse_mode="HTML", reply_markup=main_menu_keyboard(lang))
 
     elif action == "menu_profile":
         if not player:
@@ -761,22 +803,30 @@ async def callback_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 InlineKeyboardButton(t(lang, "btn_quest"), callback_data="menu_quest"),
             ],
             [
-                InlineKeyboardButton(t(lang, "btn_align"), callback_data="align_menu"),
-                InlineKeyboardButton(t(lang, "btn_job"),   callback_data="job_prompt"),
-            ],
-            [
+                InlineKeyboardButton("🏪 Магазин" if lang != "en" else "🏪 Shop", callback_data="menu_shop"),
                 InlineKeyboardButton("🎯 Навыки" if lang != "en" else "🎯 Skills", callback_data="menu_passives"),
-                InlineKeyboardButton(t(lang, "btn_race"), callback_data="menu_race"),
             ],
             [
-                InlineKeyboardButton("🏪 Магазин" if lang != "en" else "🏪 Shop", callback_data="menu_pull"),
-                InlineKeyboardButton("🪙 Token", callback_data="vip_menu"),
+                InlineKeyboardButton(t(lang, "btn_character"), callback_data="char_hub"),
             ],
             [InlineKeyboardButton(t(lang, "menu"), callback_data="menu_back")],
         ])
         player = await Player.objects.get(uid=player.uid)
-        await safe_edit(query, await _profile_text_async(player), parse_mode="Markdown",
+        await safe_edit(query, await _profile_text_async(player), parse_mode="HTML",
                         reply_markup=keyboard)
+
+    elif action == "menu_stats":
+        if not player:
+            await safe_edit(query, t(lang, "not_registered"))
+            return
+        stats_keyboard = InlineKeyboardMarkup([
+            [InlineKeyboardButton(t(lang, "refresh"), callback_data="menu_stats")],
+            [InlineKeyboardButton(t(lang, "btn_profile"), callback_data="menu_profile")],
+            [InlineKeyboardButton(t(lang, "menu"), callback_data="menu_back")],
+        ])
+        player = await Player.objects.get(uid=player.uid)
+        await safe_edit(query, await _stats_text_async(player), parse_mode="HTML",
+                        reply_markup=stats_keyboard)
 
     elif action == "menu_quest":
         await _show_quest(query, lang)
@@ -784,6 +834,55 @@ async def callback_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
     elif action == "menu_pull":
         from plugins.shop import show_shop_menu
         await show_shop_menu(query, player, lang)
+
+    elif action == "menu_shop":
+        if not player:
+            await safe_edit(query, t(lang, "not_registered"))
+            return
+        player = await Player.objects.get(uid=player.uid)
+        text = t(lang, "shop_hub_title", gold=player.gold, tokens=player.tokens)
+        kb = InlineKeyboardMarkup([
+            [InlineKeyboardButton(t(lang, "btn_shop_chests"), callback_data="shop_chests")],
+            [InlineKeyboardButton(t(lang, "btn_shop_boosts"), callback_data="shop_boosts")],
+            [InlineKeyboardButton(t(lang, "btn_shop_tokens"), callback_data="shop_tokens")],
+            [InlineKeyboardButton(t(lang, "menu"), callback_data="menu_back")],
+        ])
+        await safe_edit(query, text, parse_mode="HTML", reply_markup=kb)
+
+    elif action == "shop_chests":
+        if not player:
+            await safe_edit(query, t(lang, "not_registered"))
+            return
+        from plugins.shop import build_shop_text, build_shop_keyboard
+        player = await Player.objects.get(uid=player.uid)
+        text = build_shop_text(player, lang)
+        base_kb = build_shop_keyboard(lang)
+        rows = list(base_kb.inline_keyboard)
+        rows[-1] = [InlineKeyboardButton(t(lang, "back"), callback_data="menu_shop")]
+        await safe_edit(query, text, parse_mode="HTML", reply_markup=InlineKeyboardMarkup(rows))
+
+    elif action == "shop_boosts":
+        if not player:
+            await safe_edit(query, t(lang, "not_registered"))
+            return
+        from plugins.vip_shop import build_vip_text, build_vip_keyboard
+        player = await Player.objects.get(uid=player.uid)
+        text = build_vip_text(player, lang)
+        base_kb = build_vip_keyboard(lang, player)
+        rows = list(base_kb.inline_keyboard)
+        rows[-1] = [InlineKeyboardButton(t(lang, "back"), callback_data="menu_shop")]
+        await safe_edit(query, text, parse_mode="HTML", reply_markup=InlineKeyboardMarkup(rows))
+
+    elif action == "shop_tokens":
+        if not player:
+            await safe_edit(query, t(lang, "not_registered"))
+            return
+        from plugins.stars_shop import stars_t, get_stars_rate, get_max_tokens, build_stars_keyboard
+        text = stars_t(lang, "starshop_title", rate=get_stars_rate(), max_tokens=get_max_tokens())
+        base_kb = build_stars_keyboard(lang)
+        rows = list(base_kb.inline_keyboard)
+        rows[-1] = [InlineKeyboardButton(t(lang, "back"), callback_data="menu_shop")]
+        await safe_edit(query, text, parse_mode="HTML", reply_markup=InlineKeyboardMarkup(rows))
 
     elif action == "menu_settings":
         if not player:
@@ -807,7 +906,7 @@ async def callback_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
             [InlineKeyboardButton(t(lang, "menu"), callback_data="menu_back")],
         ])
         await safe_edit(query, t(lang, "settings_title"),
-                        parse_mode="Markdown", reply_markup=keyboard)
+                        parse_mode="HTML", reply_markup=keyboard)
 
     elif action == "menu_lang":
         await safe_edit(query, t(lang, "choose_lang"), reply_markup=lang_keyboard())
@@ -826,7 +925,7 @@ async def callback_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
             InlineKeyboardButton(t(lang, "back"),       callback_data=back_cb),
         ]])
         await safe_edit(query, t(lang, "notif_status", status=status_str),
-                        parse_mode="Markdown", reply_markup=keyboard)
+                        parse_mode="HTML", reply_markup=keyboard)
 
     elif action == "menu_autoquest":
         if not player:
@@ -839,7 +938,7 @@ async def callback_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 [InlineKeyboardButton(t(lang, "back"), callback_data="menu_settings")]
             ])
             await safe_edit(query, t(lang, "auto_quest_locked"),
-                            parse_mode="Markdown", reply_markup=keyboard)
+                            parse_mode="HTML", reply_markup=keyboard)
             return
         
         current = player.auto_accept_quests or "off"
@@ -865,7 +964,7 @@ async def callback_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
             [InlineKeyboardButton(t(lang, "back"), callback_data="menu_settings")]
         ])
         await safe_edit(query, t(lang, "autoquest_title"),
-                        parse_mode="Markdown", reply_markup=keyboard)
+                        parse_mode="HTML", reply_markup=keyboard)
 
     elif action.startswith("autoquest_set_"):
         if not player:
@@ -913,7 +1012,7 @@ async def callback_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
             [InlineKeyboardButton(t(lang, "back"), callback_data="menu_settings")]
         ])
         await safe_edit(query, t(lang, "autoquest_title"),
-                        parse_mode="Markdown", reply_markup=keyboard)
+                        parse_mode="HTML", reply_markup=keyboard)
 
     elif action in ("menu_top", "menu_top_combined"):
         await _show_top(query, lang)
@@ -923,8 +1022,8 @@ async def callback_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     elif action == "menu_bosses":
         from game.bosses import format_boss_list
-        text = format_boss_list(lang)
-        await safe_edit(query, text, parse_mode="Markdown")
+        text = await format_boss_list(lang)
+        await safe_edit(query, text, parse_mode="HTML")
 
     elif action == "menu_maps":
         from handlers.maps import send_map_view
@@ -941,7 +1040,81 @@ async def callback_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await safe_edit(query, t(lang, "not_registered"))
             return
         await safe_edit(query, t(lang, "choose_race"),
-                        parse_mode="Markdown", reply_markup=race_keyboard(lang))
+                        parse_mode="HTML", reply_markup=race_keyboard(lang))
+
+    elif action == "char_hub":
+        if not player:
+            await safe_edit(query, t(lang, "not_registered"))
+            return
+        player = await Player.objects.get(uid=player.uid)
+        race_name  = _race_display(player)
+        job_name   = _class_display(player)
+        align_name = _align_str(player)
+        text = t(lang, "char_hub",
+                 level=player.level,
+                 race=race_name,
+                 job=job_name,
+                 align=align_name)
+        await safe_edit(query, text, parse_mode="HTML",
+                        reply_markup=character_hub_keyboard(lang, player))
+
+    elif action == "char_class":
+        if not player:
+            await safe_edit(query, t(lang, "not_registered"))
+            return
+        player = await Player.objects.get(uid=player.uid)
+        job_name = _class_display(player)
+        if player.level < 10:
+            level_info = t(lang, "job_low_level")
+            kb = InlineKeyboardMarkup([
+                [InlineKeyboardButton(t(lang, "back"), callback_data="char_hub")],
+            ])
+        else:
+            level_info = ""
+            base_kb = class_keyboard(lang)
+            kb = InlineKeyboardMarkup(
+                list(base_kb.inline_keyboard) + [
+                    [InlineKeyboardButton(t(lang, "back"), callback_data="char_hub")],
+                ]
+            )
+        text = t(lang, "char_class_title", job=job_name, level_info=level_info)
+        await safe_edit(query, text, parse_mode="HTML", reply_markup=kb)
+
+    elif action == "char_race":
+        if not player:
+            await safe_edit(query, t(lang, "not_registered"))
+            return
+        player = await Player.objects.get(uid=player.uid)
+        race_name = _race_display(player)
+        text = t(lang, "char_race_title", race=race_name)
+        kb_rows = [
+            [
+                InlineKeyboardButton("👤 Человек" if lang != "en" else "👤 Human", callback_data="set_race_human"),
+                InlineKeyboardButton("⛏️ Гном"   if lang != "en" else "⛏️ Dwarf", callback_data="set_race_dwarf"),
+                InlineKeyboardButton("🌿 Эльф"   if lang != "en" else "🌿 Elf",   callback_data="set_race_elf"),
+            ],
+            [InlineKeyboardButton(t(lang, "back"), callback_data="char_hub")],
+        ]
+        await safe_edit(query, text, parse_mode="HTML",
+                        reply_markup=InlineKeyboardMarkup(kb_rows))
+
+    elif action == "char_align":
+        if not player:
+            await safe_edit(query, t(lang, "not_registered"))
+            return
+        player = await Player.objects.get(uid=player.uid)
+        align_name = _align_str(player)
+        text = t(lang, "char_align_title", align=align_name)
+        kb_rows = [
+            [
+                InlineKeyboardButton(t(lang, "align_good"),    callback_data="align_1"),
+                InlineKeyboardButton(t(lang, "align_neutral"), callback_data="align_0"),
+                InlineKeyboardButton(t(lang, "align_evil"),    callback_data="align_2"),
+            ],
+            [InlineKeyboardButton(t(lang, "back"), callback_data="char_hub")],
+        ]
+        await safe_edit(query, text, parse_mode="HTML",
+                        reply_markup=InlineKeyboardMarkup(kb_rows))
 
 
 async def _show_pull_menu(query, player, lang):
@@ -956,7 +1129,7 @@ async def _show_pull_menu(query, player, lang):
         if btns:
             rows.append(btns)
     rows.append([InlineKeyboardButton(t(lang, "menu"), callback_data="menu_back")])
-    await safe_edit(query, text, parse_mode="Markdown",
+    await safe_edit(query, text, parse_mode="HTML",
                     reply_markup=InlineKeyboardMarkup(rows))
 
 
@@ -991,14 +1164,16 @@ async def callback_pull(update: Update, context: ContextTypes.DEFAULT_TYPE):
         InlineKeyboardButton(t(lang, "btn_profile"), callback_data="menu_profile"),
         InlineKeyboardButton(t(lang, "menu"),       callback_data="menu_back"),
     ]])
-    await safe_edit(query, text, parse_mode="Markdown", reply_markup=keyboard)
+    await safe_edit(query, text, parse_mode="HTML", reply_markup=keyboard)
 
 
 async def _show_quest(query, lang: str):
-    """Показать квестборд."""
+    """Показать квестборд — HTML mode."""
     import time
     from db import PlayerQuest
     from data.quest_config import get_max_slots_for_player, get_slot_cost
+    from ui.icons import SEP, QUEST_CAT
+    from ui.bars import quest_bar
     
     player = await Player.objects.get_or_none(uid=query.from_user.id)
     if not player:
@@ -1006,41 +1181,31 @@ async def _show_quest(query, lang: str):
         return
     
     quests = await PlayerQuest.objects.filter(
-        player_uid=player.uid,
-        status="active"
+        player_uid=player.uid, status="active"
     ).all()
     
     max_slots = get_max_slots_for_player(player.level)
     used_slots = sum(get_slot_cost(q.quest_type) for q in quests)
     
-    CATEGORY_ICONS = {
-        "kill_monster": "🗡️", "earn_xp": "💰", "win_duel": "🤺",
-        "explore_any": "📍", "kill_boss": "🐉",
-        "survive": "💀", "win_battle": "🔥",
-        "collect_rare": "💎",
-    }
+    board_title = "🎯 <b>Квестборд</b>" if lang != "en" else "🎯 <b>Quest Board</b>"
     
     if not quests:
-        board_title = "Quest Board" if lang == "en" else "Квестборд"
-        slots_label = "Slots" if lang == "en" else "Слоты"
-        no_quests = "No active quests." if lang == "en" else "Нет активных квестов."
-        lines = [f"🎯 *{board_title}*", f"⚡ {slots_label}: 0/{max_slots}", "",
+        no_quests = "Нет активных квестов." if lang != "en" else "No active quests."
+        lines = [board_title, f"⚡ Слоты: 0/{max_slots}" if lang != "en" else f"⚡ Slots: 0/{max_slots}", "",
                  no_quests, ""]
         rows = []
         if used_slots < max_slots:
-            rows.append([InlineKeyboardButton("＋ New quest" if lang == "en" else "＋ Взять новый квест",
+            rows.append([InlineKeyboardButton("＋ Взять новый квест" if lang != "en" else "＋ New quest",
                          callback_data="quest_new")])
         rows.append([InlineKeyboardButton("🏠", callback_data="menu_back")])
-        await safe_edit(query, "\n".join(lines), parse_mode="Markdown",
+        await safe_edit(query, "\n".join(lines), parse_mode="HTML",
                         reply_markup=InlineKeyboardMarkup(rows))
         return
     
-    board_title = "Quest Board" if lang == "en" else "Квестборд"
-    slots_label = "Slots" if lang == "en" else "Слоты"
-    lines = [f"🎯 *{board_title}*", f"⚡ {slots_label}: {used_slots}/{max_slots}", ""]
+    lines = [board_title, f"⚡ Слоты: {used_slots}/{max_slots}" if lang != "en" else f"⚡ Slots: {used_slots}/{max_slots}", ""]
     
     for i, q in enumerate(quests, 1):
-        icon = CATEGORY_ICONS.get(q.category, "📋")
+        icon = QUEST_CAT.get(q.category, "📋")
         deadline = ""
         if q.expires_at:
             left = q.expires_at - int(time.time())
@@ -1051,8 +1216,9 @@ async def _show_quest(query, lang: str):
             else:
                 deadline = " ⛔"
         
-        lines.append(f"{i}. {icon} {q.title}")
-        lines.append(f"   ⏳ {q.progress}/{q.target_count}{deadline}")
+        bar = quest_bar(q.progress, q.target_count)
+        lines.append(f"{i}. {icon} <b>{q.title}</b>")
+        lines.append(f"   {bar}{deadline}")
         lines.append(f"   🎁 +{q.reward_xp} XP, +{q.reward_gold} Gold")
         lines.append("")
     
@@ -1063,7 +1229,7 @@ async def _show_quest(query, lang: str):
                      callback_data=f"quest_abandon_{q.quest_key}")])
     
     if used_slots < max_slots:
-        rows.append([InlineKeyboardButton("＋ New quest" if lang == "en" else "＋ Взять новый квест",
+        rows.append([InlineKeyboardButton("＋ Взять новый квест" if lang != "en" else "＋ New quest",
                      callback_data="quest_new")])
     
     rows.append([
@@ -1071,47 +1237,47 @@ async def _show_quest(query, lang: str):
         InlineKeyboardButton("🏠", callback_data="menu_back"),
     ])
     
-    await safe_edit(query, "\n".join(lines), parse_mode="Markdown",
+    await safe_edit(query, "\n".join(lines), parse_mode="HTML",
                     reply_markup=InlineKeyboardMarkup(rows))
 
 
 async def _show_top(query, lang: str):
+    from ui.icons import SEP, MEDAL, ONLINE, OFFLINE
     top_players = await Player.objects.order_by("-level", "-totalxp").limit(10).all()
     total  = await Player.objects.filter().count()
     online = await Player.objects.filter(online=True).count()
 
-    lines = [
-        t(lang, "top_entry",
-          medal="🥇" if i == 1 else "🥈" if i == 2 else "🥉" if i == 3 else f"{i}.",
-          status="🟢" if p.online else "🔴",
-          name=p.name, level=p.level, job=p.job,
-          align=_align_str(p), time=ctime(p.totalxp, lang))
-        for i, p in enumerate(top_players, 1)
-    ]
+    lines = []
+    for i, p in enumerate(top_players, 1):
+        medal = MEDAL.get(i, f"{i}.")
+        status = ONLINE if p.online else OFFLINE
+        lines.append(
+            f"{medal} {status} <b>{p.name}</b> — {'Lv.' if lang == 'en' else 'Ур.'}{p.level} ({p.job}) | {_align_str(p)} | {ctime(p.totalxp, lang)}"
+        )
 
     text = "\n".join([
-        t(lang, "top_title"),
-        t(lang, "top_stats", total=total, online=online),
-        "━━━━━━━━━━━━━━━━━━",
+        "🏆 <b>Top 10 Players</b>" if lang == "en" else "🏆 <b>Топ 10 игроков</b>",
+        f"👥 Total: {total} | 🟢 Online: {online}" if lang == "en" else f"👥 Всего: {total} | 🟢 Онлайн: {online}",
+        SEP,
         *lines,
     ])
     keyboard = InlineKeyboardMarkup([[
         InlineKeyboardButton(t(lang, "refresh"), callback_data="menu_top"),
         InlineKeyboardButton(t(lang, "menu"),    callback_data="menu_back"),
     ]])
-    await safe_edit(query, text, parse_mode="Markdown", reply_markup=keyboard)
+    await safe_edit(query, text, parse_mode="HTML", reply_markup=keyboard)
 
 
 async def _show_info(query, lang: str):
     text = (
-        t(lang, "info_title", game=cfg.GAME_NAME, version=cfg.VERSION) + "\n\n"
+        f"ℹ️ <b>{cfg.GAME_NAME} v{cfg.VERSION}</b>\n\n"
         + t(lang, "info_about") + "\n\n"
         + t(lang, "info_commands")
     )
     keyboard = InlineKeyboardMarkup([[
         InlineKeyboardButton(t(lang, "menu"), callback_data="menu_back"),
     ]])
-    await safe_edit(query, text, parse_mode="Markdown", reply_markup=keyboard)
+    await safe_edit(query, text, parse_mode="HTML", reply_markup=keyboard)
 
 
 async def cmd_pull(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -1143,35 +1309,35 @@ async def cmd_pull(update: Update, context: ContextTypes.DEFAULT_TYPE):
         InlineKeyboardButton(t(lang, "loot_more"),   callback_data="menu_pull"),
         InlineKeyboardButton(t(lang, "btn_profile"), callback_data="menu_profile"),
     ]])
-    await update.message.reply_text(text, parse_mode="Markdown", reply_markup=keyboard)
+    await update.message.reply_text(text, parse_mode="HTML", reply_markup=keyboard)
 
 
 async def cmd_top(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    from ui.icons import SEP, MEDAL, ONLINE, OFFLINE
     user = update.effective_user
     player = await Player.objects.get_or_none(uid=user.id)
     lang = (player.lang or "ru") if player else "ru"
     top_players = await Player.objects.order_by("-level", "-totalxp").limit(10).all()
     total  = await Player.objects.filter().count()
     online = await Player.objects.filter(online=True).count()
-    lines = [
-        t(lang, "top_entry",
-          medal="🥇" if i == 1 else "🥈" if i == 2 else "🥉" if i == 3 else f"{i}.",
-          status="🟢" if p.online else "🔴",
-          name=p.name, level=p.level, job=p.job,
-          align=_align_str(p), time=ctime(p.totalxp, lang))
-        for i, p in enumerate(top_players, 1)
-    ]
+    lines = []
+    for i, p in enumerate(top_players, 1):
+        medal = MEDAL.get(i, f"{i}.")
+        status = ONLINE if p.online else OFFLINE
+        lines.append(
+            f"{medal} {status} <b>{p.name}</b> — {'Lv.' if lang == 'en' else 'Ур.'}{p.level} ({p.job}) | {_align_str(p)} | {ctime(p.totalxp, lang)}"
+        )
     text = "\n".join([
-        t(lang, "top_title"),
-        t(lang, "top_stats", total=total, online=online),
-        "━━━━━━━━━━━━━━━━━━",
+        "🏆 <b>Top 10 Players</b>" if lang == "en" else "🏆 <b>Топ 10 игроков</b>",
+        f"👥 Total: {total} | 🟢 Online: {online}" if lang == "en" else f"👥 Всего: {total} | 🟢 Онлайн: {online}",
+        SEP,
         *lines,
     ])
     keyboard = InlineKeyboardMarkup([[
         InlineKeyboardButton(t(lang, "refresh"), callback_data="menu_top"),
         InlineKeyboardButton(t(lang, "menu"),    callback_data="menu_back"),
     ]])
-    await update.message.reply_text(text, parse_mode="Markdown", reply_markup=keyboard)
+    await update.message.reply_text(text, parse_mode="HTML", reply_markup=keyboard)
 
 
 async def cmd_info(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -1179,31 +1345,35 @@ async def cmd_info(update: Update, context: ContextTypes.DEFAULT_TYPE):
     player = await Player.objects.get_or_none(uid=user.id)
     lang = (player.lang or "ru") if player else "ru"
     text = (
-        t(lang, "info_title", game=cfg.GAME_NAME, version=cfg.VERSION) + "\n\n"
+        f"ℹ️ <b>{cfg.GAME_NAME} v{cfg.VERSION}</b>\n\n"
         + t(lang, "info_about") + "\n\n"
         + t(lang, "info_commands")
     )
     keyboard = InlineKeyboardMarkup([[
         InlineKeyboardButton(t(lang, "menu"), callback_data="menu_back"),
     ]])
-    await update.message.reply_text(text, parse_mode="Markdown", reply_markup=keyboard)
+    await update.message.reply_text(text, parse_mode="HTML", reply_markup=keyboard)
 
 
 async def _build_passives_text(player, lang: str) -> tuple[str, InlineKeyboardMarkup]:
     from game.skills.passives.registry import PassiveSkillRegistry
     from game.skills.passives import PassiveRegistry, xp_threshold_for_level
+    from ui.icons import SEP
+    from ui.bars import skill_bar
 
     owned = await PassiveSkillRegistry.get_all_passives(player.uid)
     equipped_count = sum(1 for p in owned if p.equipped)
     max_slots = 5
 
-    if lang != "en":
-        title = f"🎯 *Пассивные Навыки*\n\n💰 Золото: *{player.gold}*\n📦 Слоты: {equipped_count}/{max_slots}\n\n"
-    else:
-        title = f"🎯 *Passive Skills*\n\n💰 Gold: *{player.gold}*\n📦 Slots: {equipped_count}/{max_slots}\n\n"
+    lines = [
+        "🎯 <b>Пассивные навыки</b>" if lang != "en" else "🎯 <b>Passive Skills</b>",
+        f"💰 Золото: <b>{player.gold}</b>" if lang != "en" else f"💰 Gold: <b>{player.gold}</b>",
+        f"📦 {'Slots' if lang == 'en' else 'Слоты'}: {equipped_count}/{max_slots}",
+        SEP,
+    ]
 
     if not owned:
-        title += "У тебя нет пассивок. Купи в магазине!" if lang != "en" else "You have no passives. Buy from the shop!"
+        lines.append("У тебя нет пассивок. Купи в магазине!" if lang != "en" else "You have no passives. Buy from the shop!")
     else:
         for ep in owned:
             effect = PassiveRegistry.get(ep.passive_id)
@@ -1214,11 +1384,13 @@ async def _build_passives_text(player, lang: str) -> tuple[str, InlineKeyboardMa
             level = ep.level
             threshold = xp_threshold_for_level(level)
             xp = ep.xp_progress
-            bar_len = 10
-            filled = min(bar_len, int((xp / threshold) * bar_len) if threshold > 0 else 0)
-            bar = "█" * filled + "░" * (bar_len - filled)
+            bar = skill_bar(xp, threshold)
             eq_mark = "⚔️" if ep.equipped else "📦"
-            title += f"{icon} {eq_mark} *{name}* Lv.{level}\n[{bar}] {xp}/{threshold}\n\n"
+            lines.append(f"{icon} {eq_mark} <b>{name}</b> Lv.{level}")
+            lines.append(f"  {bar} {xp}/{threshold}")
+            lines.append("")
+
+    title = "\n".join(lines)
 
     keyboard = InlineKeyboardMarkup([
         [InlineKeyboardButton("🛒 Магазин" if lang != "en" else "🛒 Shop", callback_data="passives_shop")],
@@ -1230,7 +1402,7 @@ async def _build_passives_text(player, lang: str) -> tuple[str, InlineKeyboardMa
 
 async def _show_passives_menu(query, player, lang: str):
     text, keyboard = await _build_passives_text(player, lang)
-    await safe_edit(query, text, parse_mode="Markdown", reply_markup=keyboard)
+    await safe_edit(query, text, parse_mode="HTML", reply_markup=keyboard)
 
 
 async def cmd_passives(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -1241,12 +1413,29 @@ async def cmd_passives(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
     lang = player.lang or "ru"
     text, keyboard = await _build_passives_text(player, lang)
-    await update.message.reply_text(text, parse_mode="Markdown", reply_markup=keyboard)
+    await update.message.reply_text(text, parse_mode="HTML", reply_markup=keyboard)
+
+
+async def cmd_stats(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user = update.effective_user
+    player = await Player.objects.get_or_none(uid=user.id)
+    if not player:
+        await update.message.reply_text(t("ru", "not_registered"))
+        return
+    lang = player.lang or "ru"
+    stats_keyboard = InlineKeyboardMarkup([
+        [InlineKeyboardButton(t(lang, "refresh"), callback_data="menu_stats")],
+        [InlineKeyboardButton(t(lang, "btn_profile"), callback_data="menu_profile")],
+        [InlineKeyboardButton(t(lang, "menu"), callback_data="menu_back")],
+    ])
+    await update.message.reply_text(await _stats_text_async(player), parse_mode="HTML",
+                                    reply_markup=stats_keyboard)
 
 
 def register(app: Application):
     app.add_handler(CommandHandler("start",   cmd_start))
     app.add_handler(CommandHandler("profile", cmd_profile))
+    app.add_handler(CommandHandler("stats",   cmd_stats))
     app.add_handler(CommandHandler("passives", cmd_passives))
     app.add_handler(CommandHandler("info",    cmd_info))
     app.add_handler(CommandHandler("top",     cmd_top))
@@ -1255,5 +1444,7 @@ def register(app: Application):
     app.add_handler(CallbackQueryHandler(callback_set_class, pattern="^set_class_"))
     app.add_handler(CallbackQueryHandler(callback_onboarding_align, pattern="^onboard_align_[012]$"))
     app.add_handler(CallbackQueryHandler(callback_menu,     pattern="^menu_"))
+    app.add_handler(CallbackQueryHandler(callback_menu,     pattern="^char_"))
     app.add_handler(CallbackQueryHandler(callback_menu,     pattern="^autoquest_set_"))
+    app.add_handler(CallbackQueryHandler(callback_menu,     pattern="^shop_chests$|^shop_boosts$|^shop_tokens$"))
     app.add_handler(CallbackQueryHandler(callback_pull,     pattern="^pull_\\d+$"))

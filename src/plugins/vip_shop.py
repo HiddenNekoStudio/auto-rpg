@@ -5,13 +5,50 @@ plugins/vip_shop.py — Token Магазин за токены
 Цены настраиваются в config.py (VIP_SHOP_ITEMS).
 """
 import logging
+import time as time_module
 
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import Application, CallbackQueryHandler, ContextTypes
 
 from db import Player
+from ui.icons import SEP
+from core.telegram_utils import safe_edit
 
 logger = logging.getLogger(__name__)
+
+# ── VIP item descriptions ──
+VIP_ITEM_INFO = {
+    "xp_boost": {
+        "desc_ru": "Удваивает получаемый XP на 1 час",
+        "desc_en": "Doubles XP gained for 1 hour",
+        "duration_ru": "1 час",
+        "duration_en": "1 hour",
+    },
+    "speed_boost": {
+        "desc_ru": "Удваивает скорость передвижения на 30 минут",
+        "desc_en": "Doubles movement speed for 30 minutes",
+        "duration_ru": "30 минут",
+        "duration_en": "30 minutes",
+    },
+    "protect": {
+        "desc_ru": "Защита от штрафов за смерть на 1 час",
+        "desc_en": "Death penalty protection for 1 hour",
+        "duration_ru": "1 час",
+        "duration_en": "1 hour",
+    },
+    "prestige": {
+        "desc_ru": "Сброс уровня, получение престиж-баллов\n⭐ Бонусы XP и Gold",
+        "desc_en": "Reset level, gain prestige points\n⭐ XP and Gold bonuses",
+        "duration_ru": "",
+        "duration_en": "",
+    },
+    "auto_quest": {
+        "desc_ru": "Авто-приём заданий в настройках\n🤖 Один раз покупается навсегда",
+        "desc_en": "Auto-accept quests in settings\n🤖 One-time permanent unlock",
+        "duration_ru": "",
+        "duration_en": "",
+    },
+}
 
 
 def default_vip_items() -> dict:
@@ -43,6 +80,34 @@ def vip_t(lang: str, key: str, **kwargs) -> str:
     """Получить перевод для VIP магазина."""
     from i18n import t
     return t(lang, key, **kwargs)
+
+
+def build_vip_text(player, lang: str) -> str:
+    """Построить текст VIP магазина с карточками."""
+    items = get_vip_items()
+    
+    lines = [
+        "💎 <b>ТОКЕНЫ</b>" if lang != "en" else "💎 <b>TOKENS</b>",
+        f"🪙 Твои токены: <b>{player.tokens}</b>" if lang != "en" else f"🪙 Your tokens: <b>{player.tokens}</b>",
+        SEP,
+        "🛒 <b>ТОВАРЫ</b>" if lang != "en" else "🛒 <b>SHOP</b>",
+    ]
+    
+    for item_id, item_data in items.items():
+        name = vip_t(lang, f"vip_item_{item_id}")
+        price = item_data['price']
+        emoji = item_data.get('emoji', '📦')
+        info = VIP_ITEM_INFO.get(item_id, {})
+        desc = info.get(f"desc_{lang}", info.get("desc_ru", ""))
+        
+        affordable = "✅" if player.tokens >= price else "❌"
+        
+        lines.append(f"{emoji} <b>{name}</b> — {price}🪙 {affordable}")
+        if desc:
+            lines.append(f"   {desc}")
+        lines.append("")
+    
+    return "\n".join(lines)
 
 
 def build_vip_keyboard(lang: str, player: Player = None) -> InlineKeyboardMarkup:
@@ -119,14 +184,13 @@ def build_prestige_change_keyboard(lang: str, player: Player) -> InlineKeyboardM
 
 
 async def handle_vip_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Обработчик callback VIP магазина."""
+    """Обработчик callback VIP магазина — HTML mode."""
     query = update.callback_query
     await query.answer()
 
     user = query.from_user
     player = await Player.objects.get_or_none(uid=user.id)
     lang = (player.lang or "ru") if player else "ru"
-    from handlers.user import safe_edit
 
     if not player:
         await safe_edit(query, vip_t(lang, "not_registered"))
@@ -136,9 +200,9 @@ async def handle_vip_callback(update: Update, context: ContextTypes.DEFAULT_TYPE
 
     # === МЕНЮ VIP МАГАЗИНА ===
     if data == "vip_menu":
-        text = vip_t(lang, "vip_title", tokens=player.tokens)
+        text = build_vip_text(player, lang)
         keyboard = build_vip_keyboard(lang, player)
-        await safe_edit(query, text, parse_mode="Markdown", reply_markup=keyboard)
+        await safe_edit(query, text, parse_mode="HTML", reply_markup=keyboard)
         return
 
     # === ПОКУПКА ТОВАРОВ ===
@@ -157,6 +221,11 @@ async def handle_vip_callback(update: Update, context: ContextTypes.DEFAULT_TYPE
             await query.answer(vip_t(lang, "vip_not_enough_tokens"), show_alert=True)
             return
 
+        # === AUTO QUEST UNLOCK (check before token deduction) ===
+        if item_type == "auto_quest" and player.auto_quest_unlocked:
+            await query.answer("🤖 Already bought!" if lang == "en" else "🤖 Уже куплено!", show_alert=True)
+            return
+
         # Списание токенов
         player.tokens -= price
         await player.update(_columns=["tokens"])
@@ -164,85 +233,77 @@ async def handle_vip_callback(update: Update, context: ContextTypes.DEFAULT_TYPE
         # === XP BOOST ===
         if item_type == "xp_boost":
             duration = item_data.get('duration', 3600)
-            import time as time_module
             player.xp_boost_until = int(time_module.time()) + duration
             await player.update(_columns=["xp_boost_until"])
-            text = vip_t(lang, "vip_bought_xp_boost", name=player.name, duration=duration // 60)
+            name_ru = player.name or ""
+            name_en = player.name_en or name_ru
+            display_name = name_en if lang == "en" else name_ru
+            text = vip_t(lang, "vip_bought_xp_boost", name=display_name, duration=duration // 60)
 
         # === SPEED BOOST ===
         elif item_type == "speed_boost":
             duration = item_data.get('duration', 1800)
-            import time as time_module
             player.speed_boost_until = int(time_module.time()) + duration
             await player.update(_columns=["speed_boost_until"])
-            text = vip_t(lang, "vip_bought_speed_boost", name=player.name, duration=duration // 60)
+            name_ru = player.name or ""
+            name_en = player.name_en or name_ru
+            display_name = name_en if lang == "en" else name_ru
+            text = vip_t(lang, "vip_bought_speed_boost", name=display_name, duration=duration // 60)
 
         # === PROTECT ===
         elif item_type == "protect":
             duration = item_data.get('duration', 3600)
-            import time as time_module
             player.protect_until = int(time_module.time()) + duration
             await player.update(_columns=["protect_until"])
-            text = vip_t(lang, "vip_bought_protect", name=player.name, duration=duration // 60)
+            name_ru = player.name or ""
+            name_en = player.name_en or name_ru
+            display_name = name_en if lang == "en" else name_ru
+            text = vip_t(lang, "vip_bought_protect", name=display_name, duration=duration // 60)
 
         # === AUTO QUEST UNLOCK ===
         elif item_type == "auto_quest":
-            if player.auto_quest_unlocked:
-                await query.answer("🤖 Already bought!" if lang == "en" else "🤖 Уже куплено!", show_alert=True)
-                return
             player.auto_quest_unlocked = True
             await player.update(_columns=["auto_quest_unlocked"])
             await query.answer("✅ Purchased!" if lang == "en" else "✅ Куплено!", show_alert=True)
             # Redirect to auto-quest settings
-            from i18n import t as i18n_t
             current = player.auto_accept_quests or "off"
             opts = [("off", "autoquest_off"), ("silent", "autoquest_silent"), ("notify", "autoquest_notify")]
             kb_rows = []
             row = []
             for val, label_key in opts:
-                label = i18n_t(lang, label_key)
+                label = vip_t(lang, label_key)
                 if val == current:
                     label = f"✅ {label}"
                 row.append(InlineKeyboardButton(label, callback_data=f"autoquest_set_{val}"))
             kb_rows.append(row)
-            kb_rows.append([InlineKeyboardButton(i18n_t(lang, "back"), callback_data="menu_settings")])
-            await safe_edit(query, i18n_t(lang, "autoquest_title"),
-                            parse_mode="Markdown", reply_markup=InlineKeyboardMarkup(kb_rows))
+            kb_rows.append([InlineKeyboardButton(vip_t(lang, "back"), callback_data="menu_settings")])
+            await safe_edit(query, vip_t(lang, "autoquest_title"),
+                            parse_mode="HTML", reply_markup=InlineKeyboardMarkup(kb_rows))
             return
 
         # === PRESTIGE ===
         elif item_type == "prestige":
             try:
-                # Выполняем сброс
                 old_level = player.level
-                old_job = player.job
                 
-                # Сбрасываем уровень и XP
                 player.level = 1
                 player.currentxp = 0
                 player.nextxp = 600
-                
-                # Сбрасываем золото
                 player.gold = 0
                 
-                # Сбрасываем инвентарь (8 слотов) - выдаём рандомное базовое снаряжение
                 from core.loot import generate_item_data
                 
-                new_level = 1  # level после сброса
+                new_level = 1
                 for slot in ['weapon', 'shield', 'helmet', 'chest', 'gloves', 'boots', 'ring', 'amulet']:
                     item = generate_item_data(slot, new_level)
                     setattr(player, slot, item)
                 
-                # Увеличиваем prestige счётчик
                 player.prestige_count += 1
                 
-                # Увеличиваем prestige level для бонусов
                 if player.prestige_level is None or player.prestige_level == 0:
                     player.prestige_level = 1
                 else:
                     player.prestige_level += 1
-                
-                # Уровни бонусов НЕ сбрасываются — они накапливаются
                 
                 player.sync_max_hp_mp()
                 await player.update(_columns=[
@@ -251,7 +312,6 @@ async def handle_vip_callback(update: Update, context: ContextTypes.DEFAULT_TYPE
                     "prestige_count", "prestige_level", "max_hp", "max_mp"
                 ])
                 
-                # Показываем меню выбора бонуса
                 per_level, max_bonus = get_prestige_bonus()
                 
                 xp_level = player.prestige_xp_level or 0
@@ -259,31 +319,20 @@ async def handle_vip_callback(update: Update, context: ContextTypes.DEFAULT_TYPE
                 xp_percent = min(xp_level * per_level, max_bonus)
                 gold_percent = min(gold_level * per_level, max_bonus)
                 
-                # Plain text without Markdown formatting
-                text = (f"✨ PRESTIGE!\n\n"
-                        f"{player.name} {'starts anew!' if lang == 'en' else 'начинает заново!'}\n\n"
-                        f"{'Old level:' if lang == 'en' else 'Старый уровень:'} {old_level}\n"
-                        f"{'Total prestige:' if lang == 'en' else 'Всего prestige:'} x{player.prestige_count}\n"
-                        f"Prestige level: {player.prestige_level}\n\n"
-                        f"⚡ XP: Lv.{xp_level} (+{xp_percent}%)\n"
-                        f"💰 Gold: Lv.{gold_level} (+{gold_percent}%)\n\n"
-                        f"{'Choose a bonus:' if lang == 'en' else 'Выбери бонус:'}")
-                
-                logging.info(f"PRESTIGE: player={player.name}, level={player.prestige_level}, xp={xp_percent}%, gold={gold_percent}%, building keyboard...")
+                text = (
+                    f"✨ <b>PRESTIGE!</b>\n\n"
+                    f"{player.name} {'starts anew!' if lang == 'en' else 'начинает заново!'}\n\n"
+                    f"{'Old level:' if lang == 'en' else 'Старый уровень:'} <b>{old_level}</b>\n"
+                    f"{'Total prestige:' if lang == 'en' else 'Всего prestige:'} <b>x{player.prestige_count}</b>\n"
+                    f"Prestige level: <b>{player.prestige_level}</b>\n\n"
+                    f"⚡ XP: Lv.<b>{xp_level}</b> (+{xp_percent}%)\n"
+                    f"💰 Gold: Lv.<b>{gold_level}</b> (+{gold_percent}%)\n\n"
+                    f"{'Choose a bonus:' if lang == 'en' else 'Выбери бонус:'}"
+                )
                 
                 keyboard = build_prestige_choose_keyboard(lang, player)
-                logging.info(f"PRESTIGE: keyboard built, buttons count={len(keyboard.inline_keyboard)}")
                 
-                try:
-                    await query.edit_message_text(text=text, reply_markup=keyboard)
-                    logging.info(f"PRESTIGE: message sent to user {player.uid}")
-                except Exception as e:
-                    logging.error(f"PRESTIGE edit_message_text error: {e}")
-                    # Пробуем без parse_mode
-                    try:
-                        await query.edit_message_text(text=text, parse_mode=None, reply_markup=keyboard)
-                    except Exception as e2:
-                        logging.error(f"PRESTIGE edit_message_text error (no parse_mode): {e2}")
+                await safe_edit(query, text, parse_mode="HTML", reply_markup=keyboard)
                 return
             except Exception as e:
                 logging.error(f"PRESTIGE error: {e}")
@@ -296,14 +345,14 @@ async def handle_vip_callback(update: Update, context: ContextTypes.DEFAULT_TYPE
                 InlineKeyboardButton(vip_t(lang, "vip_again"), callback_data=f"vip_buy_{item_type}"),
             ],
             [
-                InlineKeyboardButton(vip_t(lang, "vip_menu"), callback_data="vip_menu"),
+                InlineKeyboardButton(vip_t(lang, "vip_menu"), callback_data="shop_boosts"),
             ],
             [
-                InlineKeyboardButton(vip_t(lang, "menu"), callback_data="menu_back"),
+                InlineKeyboardButton(vip_t(lang, "menu"), callback_data="menu_shop"),
             ],
         ])
 
-        await safe_edit(query, text, parse_mode="Markdown", reply_markup=keyboard)
+        await safe_edit(query, text, parse_mode="HTML", reply_markup=keyboard)
         return
 
     # === ВЫБОР БОНУСА PRESTIGЕ ===
@@ -316,12 +365,14 @@ async def handle_vip_callback(update: Update, context: ContextTypes.DEFAULT_TYPE
         await player.update(_columns=["prestige_xp_level"])
         per_level, max_bonus = get_prestige_bonus()
         bonus_percent = min(player.prestige_xp_level * per_level, max_bonus)
-        text = f"{'✅ XP bonus increased!' if lang == 'en' else '✅ XP бонус повышен!'}\n\n⚡ XP: Lv.{player.prestige_xp_level} (+{bonus_percent}%)\n💰 Gold: Lv.{player.prestige_gold_level or 0} (+{min((player.prestige_gold_level or 0) * per_level, max_bonus)}%)\nPrestige: x{player.prestige_count}"
+        text = (
+            f"{'✅ XP bonus increased!' if lang == 'en' else '✅ XP бонус повышен!'}\n\n"
+            f"⚡ XP: Lv.<b>{player.prestige_xp_level}</b> (+{bonus_percent}%)\n"
+            f"💰 Gold: Lv.<b>{player.prestige_gold_level or 0}</b> (+{min((player.prestige_gold_level or 0) * per_level, max_bonus)}%)\n"
+            f"Prestige: <b>x{player.prestige_count}</b>"
+        )
         keyboard = InlineKeyboardMarkup([[InlineKeyboardButton(vip_t(lang, "menu"), callback_data="menu_back")]])
-        try:
-            await query.edit_message_text(text=text, reply_markup=keyboard)
-        except Exception:
-            await query.answer(f"{'✅ XP: Lv.' if lang == 'en' else '✅ XP: Lv.'}{player.prestige_xp_level}!", show_alert=False)
+        await safe_edit(query, text, parse_mode="HTML", reply_markup=keyboard)
         return
 
     if data == "vip_bonus_gold":
@@ -333,12 +384,14 @@ async def handle_vip_callback(update: Update, context: ContextTypes.DEFAULT_TYPE
         await player.update(_columns=["prestige_gold_level"])
         per_level, max_bonus = get_prestige_bonus()
         bonus_percent = min(player.prestige_gold_level * per_level, max_bonus)
-        text = f"{'✅ Gold bonus increased!' if lang == 'en' else '✅ Gold бонус повышен!'}\n\n⚡ XP: Lv.{player.prestige_xp_level or 0} (+{min((player.prestige_xp_level or 0) * per_level, max_bonus)}%)\n💰 Gold: Lv.{player.prestige_gold_level} (+{bonus_percent}%)\nPrestige: x{player.prestige_count}"
+        text = (
+            f"{'✅ Gold bonus increased!' if lang == 'en' else '✅ Gold бонус повышен!'}\n\n"
+            f"⚡ XP: Lv.<b>{player.prestige_xp_level or 0}</b> (+{min((player.prestige_xp_level or 0) * per_level, max_bonus)}%)\n"
+            f"💰 Gold: Lv.<b>{player.prestige_gold_level}</b> (+{bonus_percent}%)\n"
+            f"Prestige: <b>x{player.prestige_count}</b>"
+        )
         keyboard = InlineKeyboardMarkup([[InlineKeyboardButton(vip_t(lang, "menu"), callback_data="menu_back")]])
-        try:
-            await query.edit_message_text(text=text, reply_markup=keyboard)
-        except Exception:
-            await query.answer(f"{'✅ Gold: Lv.' if lang == 'en' else '✅ Gold: Lv.'}{player.prestige_gold_level}!", show_alert=False)
+        await safe_edit(query, text, parse_mode="HTML", reply_markup=keyboard)
         return
 
     # === CHANGE PRESTIGE BONUS ===
@@ -352,30 +405,33 @@ async def handle_vip_callback(update: Update, context: ContextTypes.DEFAULT_TYPE
         gold_percent = min(gold_level * per_level, max_bonus)
 
         if unallocated <= 0:
-            text = (f"🔄 {'Prestige bonuses' if lang == 'en' else 'Бонусы престижа'}\n\n"
-                    f"⚡ XP: Lv.{xp_level} (+{xp_percent}%)\n"
-                    f"💰 Gold: Lv.{gold_level} (+{gold_percent}%)\n\n"
-                    f"{'All points allocated' if lang == 'en' else 'Все очки распределены'}")
+            text = (
+                f"🔄 {'Prestige bonuses' if lang == 'en' else 'Бонусы престижа'}\n\n"
+                f"⚡ XP: Lv.<b>{xp_level}</b> (+{xp_percent}%)\n"
+                f"💰 Gold: Lv.<b>{gold_level}</b> (+{gold_percent}%)\n\n"
+                f"{'All points allocated' if lang == 'en' else 'Все очки распределены'}"
+            )
             keyboard = InlineKeyboardMarkup([[InlineKeyboardButton(vip_t(lang, "menu"), callback_data="menu_back")]])
-            await safe_edit(query, text, parse_mode="Markdown", reply_markup=keyboard)
+            await safe_edit(query, text, parse_mode="HTML", reply_markup=keyboard)
             return
 
-        text = (f"🔄 {'Prestige bonuses' if lang == 'en' else 'Бонусы престижа'}\n\n"
-                f"⚡ XP: Lv.{xp_level} (+{xp_percent}%)\n"
-                f"💰 Gold: Lv.{gold_level} (+{gold_percent}%)\n\n"
-                f"{'Available:' if lang == 'en' else 'Доступно:'} {unallocated}\n\n"
-                f"{'Choose a bonus:' if lang == 'en' else 'Выбери бонус:'}")
+        text = (
+            f"🔄 {'Prestige bonuses' if lang == 'en' else 'Бонусы престижа'}\n\n"
+            f"⚡ XP: Lv.<b>{xp_level}</b> (+{xp_percent}%)\n"
+            f"💰 Gold: Lv.<b>{gold_level}</b> (+{gold_percent}%)\n\n"
+            f"{'Available:' if lang == 'en' else 'Доступно:'} <b>{unallocated}</b>\n\n"
+            f"{'Choose a bonus:' if lang == 'en' else 'Выбери бонус:'}"
+        )
         keyboard = build_prestige_change_keyboard(lang, player)
-        await safe_edit(query, text, parse_mode="Markdown", reply_markup=keyboard)
+        await safe_edit(query, text, parse_mode="HTML", reply_markup=keyboard)
         return
 
 
 def show_vip_menu(query, player, lang: str):
     """Показать меню VIP магазина."""
-    from handlers.user import safe_edit
-    text = vip_t(lang, "vip_title", tokens=player.tokens)
+    text = build_vip_text(player, lang)
     keyboard = build_vip_keyboard(lang, player)
-    return safe_edit(query, text, parse_mode="Markdown", reply_markup=keyboard)
+    return safe_edit(query, text, parse_mode="HTML", reply_markup=keyboard)
 
 
 def register_vip_handlers(app: Application):
@@ -391,7 +447,6 @@ def has_active_xp_boost(player: Player) -> bool:
     """Проверить есть ли активный XP буст."""
     if player.xp_boost_until <= 0:
         return False
-    import time as time_module
     return int(time_module.time()) < player.xp_boost_until
 
 
@@ -399,7 +454,6 @@ def has_active_speed_boost(player: Player) -> bool:
     """Проверить есть ли активный Speed буст."""
     if player.speed_boost_until <= 0:
         return False
-    import time as time_module
     return int(time_module.time()) < player.speed_boost_until
 
 
@@ -407,7 +461,6 @@ def has_active_protect(player: Player) -> bool:
     """Проверить есть ли активная защита."""
     if player.protect_until <= 0:
         return False
-    import time as time_module
     return int(time_module.time()) < player.protect_until
 
 

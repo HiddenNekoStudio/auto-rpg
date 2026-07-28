@@ -72,10 +72,10 @@ async def cmd_starshop(update: Update, context: ContextTypes.DEFAULT_TYPE):
     keyboard = build_stars_keyboard(lang)
     
     if update.message:
-        await update.message.reply_text(text, parse_mode="Markdown", reply_markup=keyboard)
+        await update.message.reply_text(text, parse_mode="HTML", reply_markup=keyboard)
     else:
         from handlers.user import safe_edit
-        await safe_edit(update.callback_query, text, parse_mode="Markdown", reply_markup=keyboard)
+        await safe_edit(update.callback_query, text, parse_mode="HTML", reply_markup=keyboard)
 
 
 async def handle_stars_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -96,7 +96,7 @@ async def handle_stars_callback(update: Update, context: ContextTypes.DEFAULT_TY
     if data == "starshop_menu":
         text = stars_t(lang, "starshop_title", rate=get_stars_rate(), max_tokens=get_max_tokens())
         keyboard = build_stars_keyboard(lang)
-        await query.edit_message_text(text=text, parse_mode="Markdown", reply_markup=keyboard)
+        await query.edit_message_text(text=text, parse_mode="HTML", reply_markup=keyboard)
         return
     
     if data.startswith("stars_buy_"):
@@ -127,7 +127,7 @@ async def handle_stars_callback(update: Update, context: ContextTypes.DEFAULT_TY
             ],
         ])
         
-        await query.edit_message_text(text=text, parse_mode="Markdown", reply_markup=keyboard)
+        await query.edit_message_text(text=text, parse_mode="HTML", reply_markup=keyboard)
         return
     
     if data.startswith("stars_pay_"):
@@ -176,6 +176,11 @@ async def on_pre_checkout(update: Update, context: ContextTypes.DEFAULT_TYPE):
         
         user_id = int(parts[1])
         tokens = int(parts[2])
+
+        player = await Player.objects.get_or_none(uid=user_id)
+        if player:
+            lang = player.lang or "ru"
+
         max_tokens = get_max_tokens()
         
         if tokens < 1 or tokens > max_tokens:
@@ -223,6 +228,8 @@ async def on_successful_payment(update: Update, context: ContextTypes.DEFAULT_TY
             await message.reply_text("❌ Error: player not found. Contact administrator." if lang == "en" else "❌ Ошибка: игрок не найден. Обратитесь к администратору.")
             return
         
+        lang = player.lang or "ru"
+        
         player.tokens += tokens
         await player.update(_columns=["tokens"])
         
@@ -235,9 +242,8 @@ async def on_successful_payment(update: Update, context: ContextTypes.DEFAULT_TY
             created_at=int(time_module.time())
         )
         
-        lang = player.lang or "ru"
         text = stars_t(lang, "starshop_bought", tokens=tokens, total_tokens=player.tokens)
-        await message.reply_text(text, parse_mode="Markdown")
+        await message.reply_text(text, parse_mode="HTML")
         
         logger.info(f"Stars payment success: user={user_id}, tokens={tokens}, charge={charge_id}")
         
@@ -249,7 +255,7 @@ async def on_successful_payment(update: Update, context: ContextTypes.DEFAULT_TY
 def register_stars_handlers(app: Application):
     """Зарегистрировать обработчики Stars магазина."""
     app.add_handler(CommandHandler("starshop", cmd_starshop))
-    app.add_handler(CallbackQueryHandler(handle_stars_callback, pattern="^stars_"))
+    app.add_handler(CallbackQueryHandler(handle_stars_callback, pattern="^(stars_|starshop_menu)$"))
     app.add_handler(PreCheckoutQueryHandler(on_pre_checkout))
     app.add_handler(MessageHandler(Filters.SUCCESSFUL_PAYMENT, on_successful_payment))
 

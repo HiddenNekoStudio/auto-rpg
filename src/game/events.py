@@ -10,6 +10,7 @@ import config as cfg
 from db import Player
 from loot import get_item
 from bot import ctime, item_string, send_to_players, readfile
+from i18n import t
 
 
 async def randomevent(bot: Bot, player: Player):
@@ -32,20 +33,14 @@ async def randomevent(bot: Bot, player: Player):
         if player.nextxp - player.currentxp < 0:
             player.nextxp = player.currentxp + 1
         event = random.choice(readfile("gevents"))
-        title  = f"⚡ *Ты {event}!*"
-        detail = (
-            f"Это чудесное событие ускорило тебя на *{ctime(val, lang)}* к уровню *{player.level + 1}*.\n"
-            f"До следующего уровня: *{ctime(player.nextxp - player.currentxp, lang)}*"
-        )
+        title  = t(lang, "gevent_title", event=event)
+        detail = t(lang, "gevent_detail", time=ctime(val, lang), level=player.level + 1, next=ctime(player.nextxp - player.currentxp, lang))
     elif event_choice == "bevent":
         player.nextxp += val
         player.totalxplost += val
         event = random.choice(readfile("bevents"))
-        title  = f"⚡ *Ты {event}!*"
-        detail = (
-            f"Это несчастливое событие замедлило тебя на *{ctime(val, lang)}* к уровню *{player.level + 1}*.\n"
-            f"До следующего уровня: *{ctime(player.nextxp - player.currentxp, lang)}*"
-        )
+        title  = t(lang, "bevent_title", event=event)
+        detail = t(lang, "bevent_detail", time=ctime(val, lang), level=player.level + 1, next=ctime(player.nextxp - player.currentxp, lang))
     else:  # hog — очень редкое
         val = int((10 + random.randint(1, 8)) / alvar * player.nextxp)
         from plugins.vip_shop import has_prestige_xp_bonus, get_prestige_xp_multiplier
@@ -54,11 +49,8 @@ async def randomevent(bot: Bot, player: Player):
         player.nextxp -= val
         if player.nextxp - player.currentxp < 0:
             player.nextxp = player.currentxp + 1
-        title  = f"⚡ *Благословение! Ты был коснут Рукой Закона!*"
-        detail = (
-            f"Это редчайшее событие ускорило тебя на *{ctime(val, lang)}* к уровню *{player.level + 1}*.\n"
-            f"До следующего уровня: *{ctime(player.nextxp - player.currentxp, lang)}*"
-        )
+        title  = t(lang, "hog_title")
+        detail = t(lang, "hog_detail", time=ctime(val, lang), level=player.level + 1, next=ctime(player.nextxp - player.currentxp, lang))
 
     await player.update(_columns=["nextxp", "totalxplost"])
 
@@ -70,19 +62,15 @@ async def randomevent(bot: Bot, player: Player):
         pass
 
     item, slot, replaced = await get_item(player)
-    footer = (
-        f"🎒 Этот {slot} *сильнее* — экипирован!"
-        if replaced else
-        f"🎒 Этот {slot} слабее — выброшен."
-    )
+    footer = t(lang, "loot_stronger", slot=slot) if replaced else t(lang, "loot_weaker", slot=slot)
 
     text = (
         f"{title}\n\n"
         f"{detail}\n\n"
-        f"🎁 *Новый лут!*\n"
+        f"{t(lang, 'loot_new')}\n"
         f"{item_string(item, lang)}\n"
-        f"_{footer}_"
+        f"<i>{footer}</i>"
     )
 
     # Шлём только этому игроку
-    await send_to_players(bot, text, player_uids=[player.uid])
+    await send_to_players(bot, text, player_uids=[player.uid], parse_mode="HTML")

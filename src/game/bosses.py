@@ -187,7 +187,7 @@ def _load_bosses() -> dict:
             for b in data.get("bosses", []):
                 _loaded_bosses[b["boss_id"]] = b
         except Exception as e:
-            print(f"Failed to load bosses: {e}")
+            logging.error("Failed to load bosses: %s", e)
     return _loaded_bosses
 
 
@@ -426,27 +426,27 @@ async def send_boss_encounter_alert(bot, player: Player, boss: Boss, zone_type: 
     if zone_type == "auto":
         if lang != "en":
             msg = "\n".join([
-                "⚠️ *ВСТРЕЧА С БОССОМ!*",
+                "⚠️ <b>ВСТРЕЧА С БОССОМ!</b>",
                 "",
-                f"*{boss.title}*",
+                f"<b>{boss.title}</b>",
                 f"📍 {boss.location_name} ({boss.x}, {boss.y})",
-                f"🎓 Уровень: *{boss.level}*",
+                f"🎓 Уровень: <b>{boss.level}</b>",
                 "",
-                f"⚔️ Шанс победы: *{chance_pct}%*",
+                f"⚔️ Шанс победы: <b>{chance_pct}%</b>",
                 "",
-                "🔄 *АВТОМАТИЧЕСКИЙ БОЙ!*",
+                "🔄 <b>АВТОМАТИЧЕСКИЙ БОЙ!</b>",
             ])
         else:
             msg = "\n".join([
-                "⚠️ *BOSS ENCOUNTER!*",
+                "⚠️ <b>BOSS ENCOUNTER!</b>",
                 "",
-                f"*{boss.title}*",
+                f"<b>{boss.title}</b>",
                 f"📍 {boss.location_name} ({boss.x}, {boss.y})",
-                f"🎓 Level: *{boss.level}*",
+                f"🎓 Level: <b>{boss.level}</b>",
                 "",
-                f"⚔️ Victory chance: *{chance_pct}%*",
+                f"⚔️ Victory chance: <b>{chance_pct}%</b>",
                 "",
-                "🔄 *AUTO BATTLE!*",
+                "🔄 <b>AUTO BATTLE!</b>",
             ])
     else:
         keyboard = [
@@ -462,27 +462,27 @@ async def send_boss_encounter_alert(bot, player: Player, boss: Boss, zone_type: 
         
         if lang != "en":
             msg = "\n".join([
-                "⚠️ *ЗОНА БОССА!*",
+                "⚠️ <b>ЗОНА БОССА!</b>",
                 "",
-                f"*{boss.title}*",
+                f"<b>{boss.title}</b>",
                 f"📍 {boss.location_name} ({boss.x}, {boss.y})",
-                f"🎓 Уровень: *{boss.level}*",
+                f"🎓 Уровень: <b>{boss.level}</b>",
                 "",
-                f"⚔️ Шанс победы: *{chance_pct}%*",
+                f"⚔️ Шанс победы: <b>{chance_pct}%</b>",
                 "",
                 loot_preview,
                 "",
-                "Выбери действие:" if lang != "en" else "Choose action:",
+                "Выбери действие:",
             ])
         else:
             msg = "\n".join([
-                "⚠️ *BOSS ZONE!*",
+                "⚠️ <b>BOSS ZONE!</b>",
                 "",
-                f"*{boss.title}*",
+                f"<b>{boss.title}</b>",
                 f"📍 {boss.location_name} ({boss.x}, {boss.y})",
-                f"🎓 Level: *{boss.level}*",
+                f"🎓 Level: <b>{boss.level}</b>",
                 "",
-                f"⚔️ Victory chance: *{chance_pct}%*",
+                f"⚔️ Victory chance: <b>{chance_pct}%</b>",
                 "",
                 loot_preview,
                 "",
@@ -492,7 +492,7 @@ async def send_boss_encounter_alert(bot, player: Player, boss: Boss, zone_type: 
         try:
             msg_obj = await bot.send_message(
                 chat_id=player.uid, text=msg,
-                parse_mode="Markdown",
+                parse_mode="HTML",
                 reply_markup=InlineKeyboardMarkup(keyboard)
             )
         except Exception:
@@ -512,7 +512,7 @@ async def send_boss_encounter_alert(bot, player: Player, boss: Boss, zone_type: 
         return True
     
     try:
-        msg_obj = await bot.send_message(chat_id=player.uid, text=msg, parse_mode="Markdown")
+        msg_obj = await bot.send_message(chat_id=player.uid, text=msg, parse_mode="HTML")
     except Exception:
         return False
     
@@ -615,6 +615,9 @@ async def resolve_battle(bot, player: Player, boss: Boss, forced: bool = False, 
     if lang is None:
         lang = "ru"
 
+    from game.classes import get_class_bonus
+    cls_bonus = get_class_bonus(player.job)
+
     # Инициализация HP/MP игрока
     if not player.hp or player.hp <= 0:
         player.hp = player.get_max_hp()
@@ -652,8 +655,6 @@ async def resolve_battle(bot, player: Player, boss: Boss, forced: bool = False, 
         "ring": player.ring,
         "amulet": player.amulet,
     })
-    from game.classes import get_class_bonus
-    cls_bonus = get_class_bonus(player.job)
     if cls_bonus.get("dps_pct"):
         player_dps = int(player_dps * (1 + cls_bonus["dps_pct"] / 100))
 
@@ -679,23 +680,23 @@ async def resolve_battle(bot, player: Player, boss: Boss, forced: bool = False, 
         msg = ""
         if lang != "en":
             msg = "\n".join([
-                "👑 *БОСС — УКЛОНЕНИЕ!*",
+                "👑 <b>БОСС — УКЛОНЕНИЕ!</b>",
                 "",
-                f"*{boss.title}*",
+                f"<b>{boss.title}</b>",
                 f"📍 {boss.location_name}",
-                "👤 *Ты уклонился от босса!*",
+                "👤 <b>Ты уклонился от босса!</b>",
                 encounter_res.message or "",
             ])
         else:
             msg = "\n".join([
-                "👑 *BOSS — DODGE!*",
+                "👑 <b>BOSS — DODGE!</b>",
                 "",
-                f"*{boss.title}*",
+                f"<b>{boss.title}</b>",
                 f"📍 {boss.location_name}",
-                "👤 *You dodged the boss!*",
+                "👤 <b>You dodged the boss!</b>",
                 encounter_res.message or "",
             ])
-        await send_to_players(bot, msg, player_uids=[player.uid])
+        await send_to_players(bot, msg, player_uids=[player.uid], parse_mode="HTML")
         return True
 
     first_strike_bonus = 0.0
@@ -950,15 +951,15 @@ async def resolve_battle(bot, player: Player, boss: Boss, forced: bool = False, 
         from plugins.monsters import invalidate_dps_cache as plugin_invalidate
         plugin_invalidate(player.uid)
 
-        passive_info_line = f"\n\n🎯 *Пассивки босса:* {boss_passive_info}" if boss_passive_info else ""
+        passive_info_line = f"\n\n🎯 <b>{'Boss passives:' if lang == 'en' else 'Пассивки босса:'}</b> {boss_passive_info}" if boss_passive_info else ""
 
         rounds_str = _format_battle_rounds(rounds, player, boss, player_hp, boss_hp, lang)
 
         if lang != "en":
             msg = "\n".join([
-                "👑 *ПОБЕДА НАД БОССОМ!*",
+                "👑 <b>ПОБЕДА НАД БОССОМ!</b>",
                 "",
-                f"*{boss.title}* повержен!",
+                f"<b>{boss.title}</b> повержен!",
                 f"📍 {boss.location_name}",
                 "",
                 f"📊 HP: {player_hp}/{player.max_hp} | 🛡️ {player.get_defense()}",
@@ -967,7 +968,7 @@ async def resolve_battle(bot, player: Player, boss: Boss, forced: bool = False, 
                 f"━━━ Раунды ({len(rounds)}) ━━━",
                 rounds_str,
                 "",
-                f"🏆 *НАГРАДА:*",
+                f"🏆 <b>НАГРАДА:</b>",
             ])
             msg += "\n" + loot_msg
             msg += f"\n💰 Gold: +{total_gold}"
@@ -975,9 +976,9 @@ async def resolve_battle(bot, player: Player, boss: Boss, forced: bool = False, 
             msg += passive_info_line
         else:
             msg = "\n".join([
-                "👑 *BOSS DEFEATED!*",
+                "👑 <b>BOSS DEFEATED!</b>",
                 "",
-                f"*{boss.title}* has been slain!",
+                f"<b>{boss.title}</b> has been slain!",
                 f"📍 {boss.location_name}",
                 "",
                 f"📊 HP: {player_hp}/{player.max_hp} | 🛡️ {player.get_defense()}",
@@ -986,7 +987,7 @@ async def resolve_battle(bot, player: Player, boss: Boss, forced: bool = False, 
                 f"━━━ Rounds ({len(rounds)}) ━━━",
                 rounds_str,
                 "",
-                f"🏆 *REWARD:*",
+                f"🏆 <b>REWARD:</b>",
             ])
             msg += "\n" + loot_msg
             msg += f"\n💰 Gold: +{total_gold}"
@@ -1036,15 +1037,15 @@ async def resolve_battle(bot, player: Player, boss: Boss, forced: bool = False, 
 
         slot_name = slot_to_downgrade.capitalize()
         item_name = current_item.get("name_en", current_item.get("name", "?"))
-        passive_info_line = f"\n\n🎯 *Пассивки босса:* {boss_passive_info}" if boss_passive_info else ""
+        passive_info_line = f"\n\n🎯 <b>{'Boss passives:' if lang == 'en' else 'Пассивки босса:'}</b> {boss_passive_info}" if boss_passive_info else ""
 
         rounds_str = _format_battle_rounds(rounds, player, boss, player_hp, boss_hp, lang)
 
         if lang != "en":
             msg = "\n".join([
-                "💀 *ПОРАЖЕНИЕ ОТ БОССА!*",
+                "💀 <b>ПОРАЖЕНИЕ ОТ БОССА!</b>",
                 "",
-                f"*{boss.title}* оказался сильнее...",
+                f"<b>{boss.title}</b> оказался сильнее...",
                 f"📍 {boss.location_name}",
                 "",
                 f"📊 HP: {player_hp}/{player.max_hp} | 🛡️ {player.get_defense()}",
@@ -1053,8 +1054,8 @@ async def resolve_battle(bot, player: Player, boss: Boss, forced: bool = False, 
                 f"━━━ Раунды ({len(rounds)}) ━━━",
                 rounds_str,
                 "",
-                f"⏱️ Штраф: *+{ctime(val, lang)}*",
-                f"📉 Уровень понижен до: *{player.level}*",
+                f"⏱️ Штраф: <b>+{ctime(val, lang)}</b>",
+                f"📉 Уровень понижен до: <b>{player.level}</b>",
                 f"🗡️ {slot_name} ухудшен(а): {item_name}",
                 "",
                 f"Босс вернётся через {BOSS_RESPAWN_DAYS} дней.",
@@ -1062,9 +1063,9 @@ async def resolve_battle(bot, player: Player, boss: Boss, forced: bool = False, 
             msg += passive_info_line
         else:
             msg = "\n".join([
-                "💀 *DEFEATED BY BOSS!*",
+                "💀 <b>DEFEATED BY BOSS!</b>",
                 "",
-                f"*{boss.title}* was too strong...",
+                f"<b>{boss.title}</b> was too strong...",
                 f"📍 {boss.location_name}",
                 "",
                 f"📊 HP: {player_hp}/{player.max_hp} | 🛡️ {player.get_defense()}",
@@ -1073,8 +1074,8 @@ async def resolve_battle(bot, player: Player, boss: Boss, forced: bool = False, 
                 f"━━━ Rounds ({len(rounds)}) ━━━",
                 rounds_str,
                 "",
-                f"⏱️ Penalty: *+{ctime(val, 'en')}*",
-                f"📉 Level reduced to: *{player.level}*",
+                f"⏱️ Penalty: <b>+{ctime(val, 'en')}</b>",
+                f"📉 Level reduced to: <b>{player.level}</b>",
                 f"🗡️ {slot_name} downgraded: {item_name}",
                 "",
                 f"Boss returns in {BOSS_RESPAWN_DAYS} days.",
@@ -1201,7 +1202,7 @@ async def check_and_spawn_bosses(bot) -> None:
 
 async def format_boss_list(lang: str = "ru") -> str:
     """Форматировать список боссов из БД."""
-    lines = ["🏰 *Список боссов:*" if lang != "en" else "🏰 *Boss list:*", ""]
+    lines = ["🏰 <b>Список боссов:</b>" if lang != "en" else "🏰 <b>Boss list:</b>", ""]
     
     bosses = await Boss.objects.all()
     for i, boss in enumerate(bosses, 1):
@@ -1210,8 +1211,8 @@ async def format_boss_list(lang: str = "ru") -> str:
         loc = boss.location_name
         level = boss.level
         
-        lines.append(f"{i}. {status} *{title}*")
-        lines.append(f"   📍 {loc} — 🎓 {level}" if lang != "en" else f"   📍 {loc} — 🎓 {level}")
+        lines.append(f"{i}. {status} <b>{title}</b>")
+        lines.append(f"   📍 {loc} — 🎓 {level}")
     
     return "\n".join(lines)
 

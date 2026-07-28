@@ -11,15 +11,15 @@ STRINGS = {
         "not_registered":   "Сначала зарегистрируйся: /start",
 
         # /start
-        "welcome_new":      "⚔️ *Добро пожаловать в {game}, {name}!*\n\n{info}\n\nIdle RPG — просто будь онлайн и смотри как твой герой приключается!\nУровни, события, монстры, дуэли и квесты — всё автоматически.\n\n💡 _{tip}_",
-        "welcome_back":     "⚔️ *С возвращением, {name}!*\n\n{info}\n\n🎖️ Уровень *{level}*, до след. уровня: *{next}*\n\n💡 _{tip}_",
+        "welcome_new":      "⚔️ <b>Добро пожаловать в {game}, {name}!</b>\n\n{info}\n\nIdle RPG — просто будь онлайн и смотри как твой герой приключается!\nУровни, события, монстры, дуэли и квесты — всё автоматически.\n\n💡 <i>{tip}</i>",
+        "welcome_back":     "⚔️ <b>С возвращением, {name}!</b>\n\n{info}\n\n🎖️ Уровень <b>{level}</b>, до след. уровня: <b>{next}</b>\n\n💡 <i>{tip}</i>",
 
         # Выбор языка
         "choose_lang":      "🌐 Выберите язык / Choose language:",
-        "lang_set":         "✅ Язык установлен: *Русский*",
+        "lang_set":         "✅ Язык установлен: <b>Русский</b>",
 
         # Главное меню
-        "main_menu":        "⚔️ *{name}* — главное меню",
+        "main_menu":        "⚔️ <b>{name}</b> — главное меню",
         "btn_profile":      "👤 Профиль",
         "btn_quest":        "🗺️ Квест",
         "btn_settings":     "⚙️ Настройки",
@@ -28,19 +28,22 @@ STRINGS = {
         "btn_shop":        "🪙 Token Магазин",
 
         # Профиль
-        "profile_title":    "👤 *Профиль: {name}* {status}\n━━━━━━━━━━━━━━━━━━",
-        "profile_level":    "🎖️ Уровень: *{level}*",
-        "profile_job":      "💼 Класс: *{job}*",
-        "profile_align":    "⚖️ Мировоззрение: {align}",
-        "profile_gold":     "💰 Золото: *{gold}*",
-        "profile_xp":       "⚡ XP: *{xp}*",
-        "profile_tokens":   "🎫 Токены: *{tokens}*",
-        "profile_prestige": "⭐ Prestige: x{prestige_count} Lv.{prestige_level} (+{bonus_percent}%) → {bonus_type}",
-        "profile_nextlvl":  "⏱️ До след. уровня: *{time}*",
-        "profile_total":    "🕐 Всего в игре: *{time}*",
-        "profile_duels":    "⚔️ Дуэли: {wins}П / {loss}П",
-        "profile_monsters": "🐾 Монстры:",
-        "profile_pos":      "📍 Позиция: ({x}, {y})",
+        "btn_stats":        "📊 Статистика",
+        "stats_title":      "📊 <b>Статистика персонажа</b>\n━━━━━━━━━━━━━━━━━━",
+        "stats_account":    "🕐 Дней в игре: <b>{days}</b>",
+        "stats_playtime":   "⏱️ Время игры: <b>{time}</b>",
+        "stats_online":     "🟢 Онлайн: <b>{time}</b>",
+        "stats_idle":       "💤 Ожидание: <b>{time}</b>",
+        "stats_offline":    "🔴 Оффлайн: <b>{time}</b>",
+        "stats_fights":     "⚔️ Всего боёв: <b>{total}</b>",
+        "stats_win_rate":   "📈 Win Rate: <b>{rate}%</b>",
+        "stats_best_streak":"🔥 Лучшая серия: <b>{streak}</b>",
+        "stats_kills":      "🐾 Убийства: <b>{kills}</b>",
+        "stats_deaths":     "💀 Смерти: <b>{deaths}</b>",
+        "stats_quests":     "✅ Квестов завершено: <b>{count}</b>",
+        "stats_dr":         "🛡️ Снижение урона: <b>{dr}%</b>",
+        "stats_xp_lost":    "📉 Потеряно XP: <b>{xp}</b>",
+        "stats_last_login": "🕐 Последний вход: <b>{time}</b>",
         "map_title":        "🗺️ *Карта — Вид {cx},{cy}*",
         "map_nearby":       "📍 Игроки поблизости:",
         "map_center":       "🏰 Центр",
@@ -48,23 +51,21 @@ STRINGS = {
         "map_coords":      "Координаты: {x},{y}",
         "map_refresh":     "🔄 Обновить",
         "quest_active":    "Квест: {goal}",
-        "profile_status":   "{quest} | Уведомления: {alert}",
-        "profile_gear":     "🎒 *Снаряжение:*",
         "btn_loot":         "🏪 Магазин",
 
         # Магазин
-        "shop_title":       "🏪 *МАГАЗИН*\n\n💰 Твоё золото: *{gold}*\n\nВыбери сундук:",
+        "shop_title":       "🏪 <b>МАГАЗИН</b>\n\n💰 Твоё золото: <b>{gold}</b>\n\nВыбери сундук:",
         "shop_chest_small":   "Маленький",
         "shop_chest_medium": "Средний",
         "shop_chest_big":    "Большой",
         "shop_chest_legendary": "Легендарный",
-        "shop_bought":     "🎁 *{name} купил {chest}!*\n\n💰 Потрачено: {price} золота\n\nПолучено:\n",
+        "shop_bought":     "🎁 <b>{name} купил {chest}!</b>\n\n💰 Потрачено: {price} золота\n\nПолучено:\n",
         "shop_not_enough_gold": "Недостаточно золота!",
         "shop_again":      "🔄 Ещё раз",
         "shop_menu":       "🏪 Магазин",
 
         # VIP Магазин
-        "vip_title":      "🪙 *TOKEN МАГАЗИН*\n\n🎫 Твои токены: *{tokens}*\n\nВыбери товар:",
+        "vip_title":      "🪙 <b>TOKEN МАГАЗИН</b>\n\n🎫 Твои токены: <b>{tokens}</b>\n\nВыбери товар:",
         "vip_item_xp_boost":  "XP Boost",
         "vip_item_speed_boost": "Speed Boost",
         "vip_item_protect":    "Protect",
@@ -85,6 +86,12 @@ STRINGS = {
         "vip_item_auto_quest":   "Auto Quests",
         "vip_bought_auto_quest": "🤖 *{name} купил авто-приём квестов!*\n\n✅ Теперь квесты принимаются автоматически!",
 
+        # Хаб магазина
+        "shop_hub_title":    "🏪 <b>МАГАЗИН</b>\n\n💰 Золото: <b>{gold}</b>  🎫 Токены: <b>{tokens}</b>\n━━━━━━━━━━━━━━━━━━━━\nВыбери раздел:",
+        "btn_shop_chests":   "💰 Сундуки — золотом",
+        "btn_shop_boosts":   "🎫 Бусты — токенами",
+        "btn_shop_tokens":   "⭐ Купить токены",
+
         # Мировоззрение
         "align_good":       "😇 Добрый",
         "align_neutral":    "😐 Нейтральный",
@@ -94,13 +101,13 @@ STRINGS = {
         "online":           "🟢 Онлайн",
         "offline":          "🔴 Оффлайн",
         "idle":             "💤 Idle",
-        "idle_return":      "🌙 *С возвращением, {name}!*\n\n"
-                            "💤 Ты был в Idle режиме: *{duration}*\n"
-                            "⚡ Получено XP: *+{xp}*\n\n"
-                            "🎖️ Уровень: *{level}*\n"
-                            "⏱️ До след. уровня: *{next}*",
-        "idle_return_no_xp": "🌙 *С возвращением, {name}!*\n\n"
-                            "💤 Ты был в Idle режиме: *{duration}*\n"
+        "idle_return":      "🌙 <b>С возвращением, {name}!</b>\n\n"
+                            "💤 Ты был в Idle режиме: <b>{duration}</b>\n"
+                            "⚡ Получено XP: <b>+{xp}</b>\n\n"
+                            "🎖️ Уровень: <b>{level}</b>\n"
+                            "⏱️ До след. уровня: <b>{next}</b>",
+        "idle_return_no_xp": "🌙 <b>С возвращением, {name}!</b>\n\n"
+                            "💤 Ты был в Idle режиме: <b>{duration}</b>\n"
                             "⏸️ XP не накопилось\n\n"
                             "💡 Нажми /profile для просмотра статуса",
         "notif_on":         "🔔 ВКЛ",
@@ -114,64 +121,68 @@ STRINGS = {
         "no_gold":        "У тебя нет золота! Заработай больше. 💰",
 
         # Настройки
-        "settings_title":   "⚙️ *Настройки персонажа*\n\nЧто хочешь изменить?",
+        "settings_title":   "⚙️ <b>Настройки персонажа</b>\n\nЧто хочешь изменить?",
         "btn_align":        "⚖️ Мировоззрение",
         "btn_job":          "💼 Сменить класс",
         "btn_lang":         "🌐 Язык",
         "btn_notif":        "Уведомления",
-        "align_title":      "⚖️ *Выбери мировоззрение:*\n\n😇 *Добрый* — +10% к силе, шанс Смайта\n😐 *Нейтральный* — без бонусов\n😈 *Злой* — Подлый удар, кража вещей",
+        "btn_character":    "⚙️ Персонаж",
+        "char_hub":         "⚙️ <b>Персонаж</b>\n\n🎖️ Ур. {level}  {race}  {job}  {align}\n━━━━━━━━━━━━━━━━━━━━━━\nВыбери что изменить:",
+        "char_class_title": "💼 <b>Выбери класс</b>\n\nТекущий: {job}\n{level_info}",
+        "char_race_title":  "🧬 <b>Выбери расу</b>\n\nТекущая: {race}",
+        "char_align_title": "⚖️ <b>Мировоззрение</b>\n\n😇 <b>Добрый</b> — +10% к силе, шанс Смайта\n😐 <b>Нейтральный</b> — без бонусов\n😈 <b>Злой</b> — Подлый удар, кража вещей\n\nТекущее: {align}",
+        "align_title":      "⚖️ <b>Выбери мировоззрение:</b>\n\n😇 <b>Добрый</b> — +10% к силе, шанс Смайта\n😐 <b>Нейтральный</b> — без бонусов\n😈 <b>Злой</b> — Подлый удар, кража вещей",
         "align_already":    "Ты уже {align}.",
-        "align_set":        "✅ Теперь ты *{align}*!",
-        "job_low_level":    "❌ Нужно *10 уровень* для смены класса!",
-        "job_prompt":       "💼 *Смена класса*\n\nТекущий класс: *{job}*\n\nОтправь: `/setjob НазваниеКласса`",
-        "job_set":          "✅ Класс изменён на *{job}*!",
+        "align_set":        "✅ Теперь ты <b>{align}</b>!",
+        "job_low_level":    "❌ Нужно <b>10 уровень</b> для смены класса!",
+        "job_prompt":       "💼 <b>Смена класса</b>\n\nТекущий класс: <b>{job}</b>\n\nОтправь: <code>/setjob НазваниеКласса</code>",
+        "job_set":          "✅ Класс изменён на <b>{job}</b>!",
         "notif_status":     "🔔 Упоминания о событиях {status}.",
-        "notif_on_txt":     "✅ *включены*",
-        "notif_off_txt":    "❌ *выключены*",
+        "notif_on_txt":     "✅ <b>включены</b>",
+        "notif_off_txt":    "❌ <b>выключены</b>",
         "btn_toggle":       "🔄 Переключить",
         
         # Авто-квесты
         "btn_autoquest":     "🔄 Авто-квесты",
-        "autoquest_title":  "⚙️ *Авто-приём квестов*\n\nВыбери режим:",
+        "autoquest_title":  "⚙️ <b>Авто-приём квестов</b>\n\nВыбери режим:",
         "autoquest_off":     "🔴 Выкл",
         "autoquest_silent":  "🔕 Тихий",
         "autoquest_notify": "🔔 С уведомлением",
-        "profile_autoquest": "Авто-квесты: {icon} {mode}",
-        "auto_quest_locked":  "🔒 *Авто-приём квестов*\n\nКупи за *5* 🪙 Token, чтобы автоматически принимать квесты.",
+        "auto_quest_locked":  "🔒 <b>Авто-приём квестов</b>\n\nКупи за <b>5</b> 🪙 Token, чтобы автоматически принимать квесты.",
         "auto_quest_buy":     "💎 Купить за 5 🪙",
         "auto_quest_bought":  "✅ Куплено!",
         "quest_accepted":   "✅ Квест принят!",
 
         # Квест
         "quest_none":       "🗺️ Сейчас нет активных квестов.",
-        "quest_title":      "🗺️ *Текущий квест*\n━━━━━━━━━━━━━━━━━━",
-        "quest_players":    "👥 Участники: *{players}*",
+        "quest_title":      "🗺️ <b>Текущий квест</b>\n━━━━━━━━━━━━━━━━━━",
+        "quest_players":    "👥 Участники: <b>{players}</b>",
         "quest_goal":       "🎯 Задача: {goal}",
         "quest_progress":   "⏳ Прогресс: {time} осталось",
         "quest_deadline":   "⏰ Дедлайн через: {time}",
         "quest_active":     "Квест: {goal}",
 
         # Индивидуальные квесты на локациях
-        "location_quest_new":   "🎯 *Новый квест в локации!*\n\n*{title}*\n\n{desc}\n\n📍 Локация: {location}\n\n🎁 Награда: XP +{xp} | Золото +{gold}\n\nПринять?",
+        "location_quest_new":   "🎯 <b>Новый квест в локации!</b>\n\n<b>{title}</b>\n\n{desc}\n\n📍 Локация: {location}\n\n🎁 Награда: XP +{xp} | Золото +{gold}\n\nПринять?",
         "location_quest_accept":    "✅ Квест принят!",
         "location_quest_decline":   "❌ Квест отклонён",
-        "location_quest_progress":  "🎯 *Прогресс квеста:*\n\n*{title}*\n\n📍 {location}\n\n⏳ Прогресс: {progress}/{target}\n\n🎁 Награда: XP +{xp} | Золото +{gold}",
-        "location_quest_complete":  "✅ *Квест выполнен!*\n\n*{title}*\n\n🎁 Награда получена:\n• XP: +{xp}\n• Золото: +{gold}",
-        "quest_daily_title":    "📅 *Ежедневные квесты*",
+        "location_quest_progress":  "🎯 <b>Прогресс квеста:</b>\n\n<b>{title}</b>\n\n📍 {location}\n\n⏳ Прогресс: {progress}/{target}\n\n🎁 Награда: XP +{xp} | Золото +{gold}",
+        "location_quest_complete":  "✅ <b>Квест выполнен!</b>\n\n<b>{title}</b>\n\n🎁 Награда получена:\n• XP: +{xp}\n• Золото: +{gold}",
+        "quest_daily_title":    "📅 <b>Ежедневные квесты</b>",
         "quest_daily_complete":  "✅ Ежедневные квесты обновлены!",
-        "quest_my_quests":      "🎯 *Мои квесты*",
+        "quest_my_quests":      "🎯 <b>Мои квесты</b>",
         "quest_no_quests":      "У тебя нет активных квестов.",
-        "quest_location_locked":"🔒 *Место выполнения:* {location}",
+        "quest_location_locked":"🔒 <b>Место выполнения:</b> {location}",
         "quest_blocked_info":   "⛔ Ты заблокирован в этой локации до выполнения квеста!",
         "quest_unlocked":       "🔓 Квест выполнен! Блокировка снята.",
 
         # Топ
-        "top_title":        "🏆 *Топ 10 игроков*",
+        "top_title":        "🏆 <b>Топ 10 игроков</b>",
         "top_stats":        "👥 Всего: {total} | 🟢 Онлайн: {online}",
-        "top_entry":        "{medal} {status} *{name}* — Ур.{level} ({job}) | {align} | {time}",
+        "top_entry":        "{medal} {status} <b>{name}</b> — Ур.{level} ({job}) | {align} | {time}",
 
         # Оффлайн уведомление
-        "went_offline":     "⏸️ *{name}*, твой герой ушёл на отдых!\n\nТы не проявлял активности более {mins} мин. и был переведён в оффлайн — опыт больше не начисляется.\n\nЗайди в бота и нажми /start чтобы продолжить приключение! ⚔️",
+        "went_offline":     "⏸️ <b>{name}</b>, твой герой ушёл на отдых!\n\nТы не проявлял активности более {mins} мин. и был переведён в оффлайн — опыт больше не начисляется.\n\nЗайди в бота и нажми /start чтобы продолжить приключение! ⚔️",
 
         # Глобальное событие (каждые 4 часа)
         "global_event":     "🌍 *Мировое событие!*\n\nВсем онлайн игрокам начислен бонус!",
@@ -192,17 +203,17 @@ STRINGS = {
         "race_set":         "✅ Раса выбрана: *{race}*",
         "race_changed":     "✅ Раса изменена на: *{race}*",
         "btn_race":         "🧬 Сменить расу",
-        "profile_race":     "🧬 Раса: *{race}*",
+
 
         # Глобальное событие
         "global_event_msg": "⚡ *Мировое событие!*\n\nБоги обратили взор на королевство...\n{event_text}",
 
         # Боссы
-        "boss_zone": "⚠️ *ЗОНА БОССА!*\n\n*{title}*\n📍 {location} ({x}, {y})\n🎓 Уровень: *{level}*\n⚔️ Шанс победы: *{chance}%*\n\n{item_info}\n\nВыбери действие:",
-        "boss_encounter": "⚠️ *ВСТРЕЧА С БОССОМ!*\n\n*{title}*\n📍 {location}\n🎓 Уровень: *{level}*\n⚔️ Шанс победы: *{chance}%*\n\n🔄 *АВТОМАТИЧЕСКИЙ БОЙ!*",
-        "boss_victory": "👑 *ПОБЕДА НАД БОССОМ!*\n\n*{title}* повержен!\n📍 {location}\n\n🏆 *НАГРОДА:*\n{item}\n\n🎖️ XP-бонус: -{time} до уровня {next_level}!",
-        "boss_defeat": "💀 *ПОРАЖЕНИЕ ОТ БОССА!*\n\n*{title}* оказался сильнее...\n📍 {location}\n\n⏱️ Штраф: *+{time}*\n📉 Уровень понижен до: *{level}*\n🗡️ {slot} ухудшен: {item_name}\n\nБосс вернётся через {days} дней.",
-        "boss_list_title": "🏰 *Список боссов:*",
+        "boss_zone": "⚠️ <b>ЗОНА БОССА!</b>\n\n<b>{title}</b>\n📍 {location} ({x}, {y})\n🎓 Уровень: <b>{level}</b>\n⚔️ Шанс победы: <b>{chance}%</b>\n\n{item_info}\n\nВыбери действие:",
+        "boss_encounter": "⚠️ <b>ВСТРЕЧА С БОССОМ!</b>\n\n<b>{title}</b>\n📍 {location}\n🎓 Уровень: <b>{level}</b>\n⚔️ Шанс победы: <b>{chance}%</b>\n\n🔄 <b>АВТОМАТИЧЕСКИЙ БОЙ!</b>",
+        "boss_victory": "👑 <b>ПОБЕДА НАД БОССОМ!</b>\n\n<b>{title}</b> повержен!\n📍 {location}\n\n🏆 <b>НАГРОДА:</b>\n{item}\n\n🎖️ XP-бонус: -{time} до уровня {next_level}!",
+        "boss_defeat": "💀 <b>ПОРАЖЕНИЕ ОТ БОССА!</b>\n\n<b>{title}</b> оказался сильнее...\n📍 {location}\n\n⏱️ Штраф: <b>+{time}</b>\n📉 Уровень понижен до: <b>{level}</b>\n🗡️ {slot} ухудшен: {item_name}\n\nБосс вернётся через {days} дней.",
+        "boss_list_title": "🏰 <b>Список боссов:</b>",
         "btn_bosses": "👹 Боссы",
         "btn_maps": "🗺️ Карта",
 
@@ -219,6 +230,17 @@ STRINGS = {
         "passive_max_level":    "⭐ МАКСИМАЛЬНЫЙ УРОВЕНЬ",
         "passive_not_enough_gold": "Недостаточно золота! Нужно {cost}💰, у тебя {gold}💰",
         "passive_upgraded":     "⬆ {icon} {name} Ур.{level}!",
+
+        # Случайные события
+        "gevent_title":     "⚡ <b>Ты {event}!</b>",
+        "gevent_detail":    "Это чудесное событие ускорило тебя на <b>{time}</b> к уровню <b>{level}</b>.\nДо следующего уровня: <b>{next}</b>",
+        "bevent_title":     "⚡ <b>Ты {event}!</b>",
+        "bevent_detail":    "Это несчастливое событие замедлило тебя на <b>{time}</b> к уровню <b>{level}</b>.\nДо следующего уровня: <b>{next}</b>",
+        "hog_title":        "⚡ <b>Благословение! Ты был коснут Рукой Закона!</b>",
+        "hog_detail":       "Это редчайшее событие ускорило тебя на <b>{time}</b> к уровню <b>{level}</b>.\nДо следующего уровня: <b>{next}</b>",
+        "loot_stronger":    "🎒 Этот {slot} <b>сильнее</b> — экипирован!",
+        "loot_weaker":      "🎒 Этот {slot} слабее — выброшен.",
+        "loot_new":         "🎁 <b>Новый лут!</b>",
     },
 
     "en": {
@@ -229,15 +251,15 @@ STRINGS = {
         "not_registered":   "Please register first: /start",
 
         # /start
-        "welcome_new":      "⚔️ *Welcome to {game}, {name}!*\n\n{info}\n\nIdle RPG — just stay online and watch your hero adventure!\nLevels, events, monsters, duels and quests — all automatic.\n\n💡 _{tip}_",
-        "welcome_back":     "⚔️ *Welcome back, {name}!*\n\n{info}\n\n🎖️ Level *{level}*, next level in: *{next}*\n\n💡 _{tip}_",
+        "welcome_new":      "⚔️ <b>Welcome to {game}, {name}!</b>\n\n{info}\n\nIdle RPG — just stay online and watch your hero adventure!\nLevels, events, monsters, duels and quests — all automatic.\n\n💡 <i>{tip}</i>",
+        "welcome_back":     "⚔️ <b>Welcome back, {name}!</b>\n\n{info}\n\n🎖️ Level <b>{level}</b>, next level in: <b>{next}</b>\n\n💡 <i>{tip}</i>",
 
         # Language
         "choose_lang":      "🌐 Выберите язык / Choose language:",
-        "lang_set":         "✅ Language set: *English*",
+        "lang_set":         "✅ Language set: <b>English</b>",
 
         # Main menu
-        "main_menu":        "⚔️ *{name}* — main menu",
+        "main_menu":        "⚔️ <b>{name}</b> — main menu",
         "btn_profile":      "👤 Profile",
         "btn_quest":        "🗺️ Quest",
         "btn_settings":     "⚙️ Settings",
@@ -246,19 +268,22 @@ STRINGS = {
         "btn_shop":        "🏪 Shop",
 
         # Profile
-        "profile_title":    "👤 *Profile: {name}* {status}\n━━━━━━━━━━━━━━━━━━",
-        "profile_level":    "🎖️ Level: *{level}*",
-        "profile_job":      "💼 Class: *{job}*",
-        "profile_align":    "⚖️ Alignment: {align}",
-        "profile_gold":    "💰 Gold: *{gold}*",
-        "profile_xp":      "⚡ XP: *{xp}*",
-        "profile_tokens":   "🎫 Tokens: *{tokens}*",
-        "profile_prestige": "⭐ Prestige: x{prestige_count} Lv.{prestige_level} (+{bonus_percent}%) → {bonus_type}",
-        "profile_nextlvl":  "⏱️ Next level in: *{time}*",
-        "profile_total":    "🕐 Total playtime: *{time}*",
-        "profile_duels":    "⚔️ Duels: {wins}W / {loss}L",
-        "profile_monsters": "🐾 Monsters:",
-        "profile_pos":      "📍 Position: ({x}, {y})",
+        "btn_stats":        "📊 Statistics",
+        "stats_title":      "📊 <b>Character Statistics</b>\n━━━━━━━━━━━━━━━━━━",
+        "stats_account":    "🕐 Days in game: <b>{days}</b>",
+        "stats_playtime":   "⏱️ Playtime: <b>{time}</b>",
+        "stats_online":     "🟢 Online: <b>{time}</b>",
+        "stats_idle":       "💤 Idle: <b>{time}</b>",
+        "stats_offline":    "🔴 Offline: <b>{time}</b>",
+        "stats_fights":     "⚔️ Total fights: <b>{total}</b>",
+        "stats_win_rate":   "📈 Win Rate: <b>{rate}%</b>",
+        "stats_best_streak":"🔥 Best streak: <b>{streak}</b>",
+        "stats_kills":      "🐾 Kills: <b>{kills}</b>",
+        "stats_deaths":     "💀 Deaths: <b>{deaths}</b>",
+        "stats_quests":     "✅ Quests completed: <b>{count}</b>",
+        "stats_dr":         "🛡️ Damage reduction: <b>{dr}%</b>",
+        "stats_xp_lost":    "📉 XP lost: <b>{xp}</b>",
+        "stats_last_login": "🕐 Last login: <b>{time}</b>",
         "map_title":        "🗺️ *Map — View {cx},{cy}*",
         "map_nearby":       "📍 Nearby players:",
         "map_center":       "🏰 Center",
@@ -266,23 +291,21 @@ STRINGS = {
         "map_coords":      "Coords: {x},{y}",
         "map_refresh":     "🔄 Refresh",
         "quest_active":    "Quest: {goal}",
-        "profile_status":   "{quest} | Notifications: {alert}",
-        "profile_gear":     "🎒 *Equipment:*",
         "btn_loot":         "🏪 Shop",
 
         # Shop
-        "shop_title":       "🏪 *SHOP*\n\n💰 Your gold: *{gold}*\n\nChoose chest:",
+        "shop_title":       "🏪 <b>SHOP</b>\n\n💰 Your gold: <b>{gold}</b>\n\nChoose chest:",
         "shop_chest_small":   "Small",
         "shop_chest_medium": "Medium",
         "shop_chest_big":    "Big",
         "shop_chest_legendary": "Legendary",
-        "shop_bought":     "🎁 *{name} bought {chest}!*\n\n💰 Spent: {price} gold\n\nReceived:\n",
+        "shop_bought":     "🎁 <b>{name} bought {chest}!</b>\n\n💰 Spent: {price} gold\n\nReceived:\n",
         "shop_not_enough_gold": "Not enough gold!",
         "shop_again":      "🔄 Again",
         "shop_menu":       "🏪 Shop",
 
         # VIP Shop
-        "vip_title":      "🪙 *TOKEN SHOP*\n\n🎫 Your tokens: *{tokens}*\n\nChoose item:",
+        "vip_title":      "🪙 <b>TOKEN SHOP</b>\n\n🎫 Your tokens: <b>{tokens}</b>\n\nChoose item:",
         "vip_item_xp_boost":  "XP Boost",
         "vip_item_speed_boost": "Speed Boost",
         "vip_item_protect":    "Protect",
@@ -303,6 +326,12 @@ STRINGS = {
         "vip_item_auto_quest":   "Auto Quests",
         "vip_bought_auto_quest": "🤖 *{name} bought Auto-Accept Quests!*\n\n✅ Quests will be accepted automatically!",
 
+        # Shop hub
+        "shop_hub_title":    "🏪 <b>SHOP</b>\n\n💰 Gold: <b>{gold}</b>  🎫 Tokens: <b>{tokens}</b>\n━━━━━━━━━━━━━━━━━━━━\nChoose section:",
+        "btn_shop_chests":   "💰 Chests — gold",
+        "btn_shop_boosts":   "🎫 Boosts — tokens",
+        "btn_shop_tokens":   "⭐ Buy tokens",
+
         # Alignment
         "align_good":       "😇 Good",
         "align_neutral":    "😐 Neutral",
@@ -312,11 +341,11 @@ STRINGS = {
         "online":           "🟢 Online",
         "offline":          "🔴 Offline",
         "idle":             "💤 Idle",
-        "idle_return":      "🌙 *Welcome back, {name}!*\n\n"
-                            "💤 You were in Idle mode: *{duration}*\n"
-                            "⚡ XP gained: *+{xp}*\n\n"
-                            "🎖️ Level: *{level}*\n"
-                            "⏱️ Next level in: *{next}*",
+        "idle_return":      "🌙 <b>Welcome back, {name}!</b>\n\n"
+                            "💤 You were in Idle mode: <b>{duration}</b>\n"
+                            "⚡ XP gained: <b>+{xp}</b>\n\n"
+                            "🎖️ Level: <b>{level}</b>\n"
+                            "⏱️ Next level in: <b>{next}</b>",
         "idle_return_no_xp": "🌙 *Welcome back, {name}!*\n\n"
                             "💤 You were in Idle mode: *{duration}*\n"
                             "⏸️ No XP accumulated\n\n"
@@ -332,30 +361,33 @@ STRINGS = {
         "no_gold":        "You have no gold! Earn more. 💰",
 
         # Settings
-        "settings_title":   "⚙️ *Character settings*\n\nWhat would you like to change?",
+        "settings_title":   "⚙️ <b>Character settings</b>\n\nWhat would you like to change?",
         "btn_align":        "⚖️ Alignment",
         "btn_job":          "💼 Change class",
         "btn_lang":         "🌐 Language",
         "btn_notif":        "Notifications",
-        "align_title":      "⚖️ *Choose alignment:*\n\n😇 *Good* — +10% gear power, Smite chance\n😐 *Neutral* — no bonuses\n😈 *Evil* — Backstab, steal items",
+        "btn_character":    "⚙️ Character",
+        "char_hub":         "⚙️ <b>Character</b>\n\n🎖️ Lv. {level}  {race}  {job}  {align}\n━━━━━━━━━━━━━━━━━━━━━━\nChoose what to change:",
+        "char_class_title": "💼 <b>Choose class</b>\n\nCurrent: {job}\n{level_info}",
+        "char_race_title":  "🧬 <b>Choose race</b>\n\nCurrent: {race}",
+        "char_align_title": "⚖️ <b>Alignment</b>\n\n😇 <b>Good</b> — +10% gear power, Smite chance\n😐 <b>Neutral</b> — no bonuses\n😈 <b>Evil</b> — Backstab, steal items\n\nCurrent: {align}",
+        "align_title":      "⚖️ <b>Choose alignment:</b>\n\n😇 <b>Good</b> — +10% gear power, Smite chance\n😐 <b>Neutral</b> — no bonuses\n😈 <b>Evil</b> — Backstab, steal items",
         "align_already":    "You are already {align}.",
-        "align_set":        "✅ You are now *{align}*!",
-        "job_low_level":    "❌ You need *level 10* to change class!",
-        "job_prompt":       "💼 *Change class*\n\nCurrent class: *{job}*\n\nSend: `/setjob ClassName`",
-        "job_set":          "✅ Class changed to *{job}*!",
-        "notif_status":     "🔔 Event notifications {status}.",
-        "notif_on_txt":     "✅ *enabled*",
-        "notif_off_txt":    "❌ *disabled*",
+        "align_set":        "✅ You are now <b>{align}</b>!",
+        "job_low_level":    "❌ You need <b>level 10</b> to change class!",
+        "job_prompt":       "💼 <b>Change class</b>\n\nCurrent class: <b>{job}</b>\n\nSend: <code>/setjob ClassName</code>",
+        "job_set":          "✅ Class changed to <b>{job}</b>!",
+        "notif_on_txt":     "✅ <b>enabled</b>",
+        "notif_off_txt":    "❌ <b>disabled</b>",
         "btn_toggle":       "🔄 Toggle",
 
         # Auto-quests
         "btn_autoquest":     "🔄 Auto-Quests",
-        "autoquest_title":  "⚙️ *Auto-accept quests*\n\nSelect mode:",
+        "autoquest_title":  "⚙️ <b>Auto-accept quests</b>\n\nSelect mode:",
         "autoquest_off":    "🔴 Off",
         "autoquest_silent": "🔕 Silent",
         "autoquest_notify": "🔔 With notify",
-        "profile_autoquest": "Auto-quests: {icon} {mode}",
-        "auto_quest_locked":  "🔒 *Auto-Accept Quests*\n\nBuy for *5* 🪙 Token to auto-accept quests.",
+        "auto_quest_locked":  "🔒 <b>Auto-Accept Quests</b>\n\nBuy for <b>5</b> 🪙 Token to auto-accept quests.",
         "auto_quest_buy":     "💎 Buy for 5 🪙",
         "auto_quest_bought":  "✅ Purchased!",
         "quest_accepted":  "✅ Quest accepted!",
@@ -397,7 +429,6 @@ STRINGS = {
         "race_set":         "✅ Race selected: *{race}*",
         "race_changed":     "✅ Race changed to: *{race}*",
         "btn_race":         "🧬 Change race",
-        "profile_race":     "🧬 Race: *{race}*",
 
         # Global event
         "global_event":     "🌍 *World Event!*\n\nAll online players received a bonus!",
@@ -410,26 +441,25 @@ STRINGS = {
         "info_commands":    "💬 *Commands:*\n/start — Main menu\n/profile — Your profile\n/quest — Quests\n/passives — Passive skills\n/bosses — Boss list\n/setjob — Change class (10+ lvl)\n/align — Alignment\n/alert — Toggle notifications\n/help — Command list\n/starshop — Star Shop",
 
         # Classes
-        "choose_class":     "💼 *Choose your class:*\n\n╔══════════════════════════════════╗\n║ ⚔️ *Warrior*  — +10% DPS        ║\n║ 🏹 *Archer*   — +10% crit       ║\n║ 🔮 *Mage*     — +15% XP         ║\n║ 🗡️ *Rogue*    — +15% dodge      ║\n║ 🛡️ *Paladin*  — +15% defense    ║\n╚══════════════════════════════════╝",
-        "class_set":        "✅ Class selected: *{class_name}*",
-        "class_changed":    "🔄 Class changed: *{class_name}*",
+        "choose_class":     "💼 <b>Choose your class:</b>\n\n╔══════════════════════════════════╗\n║ ⚔️ <b>Warrior</b>  — +10% DPS        ║\n║ 🏹 <b>Archer</b>   — +10% crit       ║\n║ 🔮 <b>Mage</b>     — +15% XP         ║\n║ 🗡️ <b>Rogue</b>    — +15% dodge      ║\n║ 🛡️ <b>Paladin</b>  — +15% defense    ║\n╚══════════════════════════════════╝",
+        "class_set":        "✅ Class selected: <b>{class_name}</b>",
+        "class_changed":    "🔄 Class changed: <b>{class_name}</b>",
 
         # Race
         "choose_race":      "⚔️ *Choose your hero's race:*\n\n👤 *Human* — 🍀 20% chance to avoid monster penalty\n⛏️ *Dwarf* — 🛡️ +15% combat power\n🌿 *Elf* — 🏹 +10% bonus on monster victory",
         "race_set":         "✅ Race selected: *{race}*",
         "race_changed":     "✅ Race changed to: *{race}*",
         "btn_race":         "🧬 Change race",
-        "profile_race":     "🧬 Race: *{race}*",
 
         # Global event
         "global_event_msg": "⚡ *World Event!*\n\nThe gods turn their gaze to the kingdom...\n{event_text}",
 
         # Bosses
-        "boss_zone": "⚠️ *BOSS ZONE!*\n\n*{title}*\n📍 {location} ({x}, {y})\n🎓 Level: *{level}*\n⚔️ Victory chance: *{chance}%*\n\n{item_info}\n\nChoose action:",
-        "boss_encounter": "⚠️ *BOSS ENCOUNTER!*\n\n*{title}*\n📍 {location}\n🎓 Level: *{level}*\n⚔️ Victory chance: *{chance}%*\n\n🔄 *AUTOBATTLE!*",
-        "boss_victory": "👑 *BOSS DEFEATED!*\n\n*{title}* has been slain!\n📍 {location}\n\n🏆 *REWARD:*\n{item}\n\n🎖️ XP-bonus: -{time} to level {next_level}!",
-        "boss_defeat": "💀 *DEFEATED BY BOSS!*\n\n*{title}* was too strong...\n📍 {location}\n\n⏱️ Penalty: *+{time}*\n📉 Level reduced to: *{level}*\n🗡️ {slot} downgraded: {item_name}\n\nBoss returns in {days} days.",
-        "boss_list_title": "🏰 *Boss list:*",
+        "boss_zone": "⚠️ <b>BOSS ZONE!</b>\n\n<b>{title}</b>\n📍 {location} ({x}, {y})\n🎓 Level: <b>{level}</b>\n⚔️ Victory chance: <b>{chance}%</b>\n\n{item_info}\n\nChoose action:",
+        "boss_encounter": "⚠️ <b>BOSS ENCOUNTER!</b>\n\n<b>{title}</b>\n📍 {location}\n🎓 Level: <b>{level}</b>\n⚔️ Victory chance: <b>{chance}%</b>\n\n🔄 <b>AUTOBATTLE!</b>",
+        "boss_victory": "👑 <b>BOSS DEFEATED!</b>\n\n<b>{title}</b> has been slain!\n📍 {location}\n\n🏆 <b>REWARD:</b>\n{item}\n\n🎖️ XP-bonus: -{time} to level {next_level}!",
+        "boss_defeat": "💀 <b>DEFEATED BY BOSS!</b>\n\n<b>{title}</b> was too strong...\n📍 {location}\n\n⏱️ Penalty: <b>+{time}</b>\n📉 Level reduced to: <b>{level}</b>\n🗡️ {slot} downgraded: {item_name}\n\nBoss returns in {days} days.",
+        "boss_list_title": "🏰 <b>Boss list:</b>",
         "btn_bosses": "👹 Bosses",
         "btn_maps": "🗺️ Map",
 
@@ -446,6 +476,17 @@ STRINGS = {
         "passive_max_level":    "⭐ MAX LEVEL",
         "passive_not_enough_gold": "Not enough gold! Need {cost}💰, you have {gold}💰",
         "passive_upgraded":     "⬆ {icon} {name} Lv.{level}!",
+
+        # Random events
+        "gevent_title":     "⚡ <b>You {event}!</b>",
+        "gevent_detail":    "This wonderful event sped you up by <b>{time}</b> to level <b>{level}</b>.\nNext level in: <b>{next}</b>",
+        "bevent_title":     "⚡ <b>You {event}!</b>",
+        "bevent_detail":    "This unlucky event slowed you down by <b>{time}</b> to level <b>{level}</b>.\nNext level in: <b>{next}</b>",
+        "hog_title":        "⚡ <b>Blessing! You were touched by the Hand of Law!</b>",
+        "hog_detail":       "This rarest event sped you up by <b>{time}</b> to level <b>{level}</b>.\nNext level in: <b>{next}</b>",
+        "loot_stronger":    "🎒 This {slot} <b>is stronger</b> — equipped!",
+        "loot_weaker":      "🎒 This {slot} is weaker — discarded.",
+        "loot_new":         "🎁 <b>New loot!</b>",
     },
 }
 

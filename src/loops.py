@@ -78,11 +78,18 @@ async def levelup(bot, player: Player) -> None:
 
     item, slot, replaced = await get_item(player)
 
-    footer = (
-        f"🎒 {slot} *сильнее* — экипирован!"
-        if replaced else
-        f"🎒 {slot} слабее — выброшен."
-    )
+    if lang == "en":
+        footer = (
+            f"🎒 {slot} *stronger* — equipped!"
+            if replaced else
+            f"🎒 {slot} weaker — discarded."
+        )
+    else:
+        footer = (
+            f"🎒 {slot} *сильнее* — экипирован!"
+            if replaced else
+            f"🎒 {slot} слабее — выброшен."
+        )
 
     if lang == "en":
         text = (
@@ -138,13 +145,15 @@ async def main_loop(bot) -> None:
     
     if went_offline:
         for p in went_offline:
+            p.total_offline_seconds = (p.total_offline_seconds or 0) + max(0, now - (p.last_online_at or now))
             p.last_online_at = 0
             p.last_idle_at = now
             p.online = False
             p.idle_since = now
             p.idle_xp = 0
             await p.update(_columns=["online", "idle_since", "idle_xp",
-                                      "last_online_at", "last_idle_at"])
+                                      "last_online_at", "last_idle_at",
+                                      "total_offline_seconds"])
         logging.info("Ушли оффлайн (таймаут): %s", [p.name for p in went_offline])
         for p in went_offline:
             mins = cfg.OFFLINE_TIMEOUT // 60
@@ -245,16 +254,16 @@ async def main_loop(bot) -> None:
                         player.x = random.randint(player.x - 1, player.x + 1) % cfg.MAP_SIZE[0]
                         player.y = random.randint(player.y - 1, player.y + 1) % cfg.MAP_SIZE[1]
                     else:
-                        player.x = random.randint(player.x - 3, player.x + 5) % cfg.MAP_SIZE[0]
-                        player.y = random.randint(player.y - 3, player.y + 5) % cfg.MAP_SIZE[1]
+                        player.x = random.randint(player.x - 3, player.x + 3) % cfg.MAP_SIZE[0]
+                        player.y = random.randint(player.y - 3, player.y + 3) % cfg.MAP_SIZE[1]
         else:
             move_roll = random.random()
             if move_roll < 0.7:
                 player.x = random.randint(player.x - 1, player.x + 1) % cfg.MAP_SIZE[0]
                 player.y = random.randint(player.y - 1, player.y + 1) % cfg.MAP_SIZE[1]
             else:
-                player.x = random.randint(player.x - 3, player.x + 5) % cfg.MAP_SIZE[0]
-                player.y = random.randint(player.y - 3, player.y + 5) % cfg.MAP_SIZE[1]
+                player.x = random.randint(player.x - 3, player.x + 3) % cfg.MAP_SIZE[0]
+                player.y = random.randint(player.y - 3, player.y + 3) % cfg.MAP_SIZE[1]
 
         if old_x != player.x or old_y != player.y:
             from handlers.quests import check_location_quests

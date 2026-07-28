@@ -152,7 +152,7 @@ async def send_quest_progress_notification(player: Player, quest: PlayerQuest, n
                 f"Прогресс: {quest.progress}/{quest.target_count} ({new_pct}%)"
             )
         
-        await send_to_players(bot_instance, text, player_uids=[player.uid], parse_mode="Markdown")
+        await send_to_players(bot_instance, text, player_uids=[player.uid], parse_mode="HTML")
     except Exception as e:
         logging.error(f"Quest progress notification error: {e}")
 
@@ -386,7 +386,7 @@ async def complete_quest(player: Player, quest: PlayerQuest, bot=None):
         text = f"✅ *Квест выполнен!*\n\n*{quest.title}*\n\n🎁 Награда:\n• XP: +{xp}\n• Золото: +{gold}"
     
     try:
-        await send_to_players(bot_instance, text, player_uids=[player.uid], parse_mode="Markdown")
+        await send_to_players(bot_instance, text, player_uids=[player.uid], parse_mode="HTML")
     except Exception as e:
         logging.error(f"Quest complete notification error: {e}")
 
@@ -422,7 +422,7 @@ async def fail_quest(player: Player, quest: PlayerQuest, apply_penalty: bool = T
         text = f"❌ *Квест провален!*\n\n*{quest.title}*\n\nИстёк срок выполнения."
     
     try:
-        await send_to_players(bot_instance, text, player_uids=[player.uid], parse_mode="Markdown")
+        await send_to_players(bot_instance, text, player_uids=[player.uid], parse_mode="HTML")
     except Exception as e:
         logging.error(f"Quest fail notification error: {e}")
 
@@ -667,7 +667,7 @@ async def endquest(bot, quest, win: bool = True):
     ru_status = "✅ Победа!" if win else "❌ Провал"
     text = f"*Global quest completed!* / *Глобальный квест завершён!*\n\n{en_status} / {ru_status}\n\n*{quest.goal}*"
     try:
-        await send_to_players(bot, text, parse_mode="Markdown")
+        await send_to_players(bot, text, parse_mode="HTML")
     except Exception as e:
         logging.error(f"Global endquest notification error: {e}")
     await quest.delete()

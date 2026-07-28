@@ -43,7 +43,7 @@ load_env_file()
 # Название игры
 GAME_NAME = "AutoRPG"
 # Версия
-VERSION = "1.1.0"
+VERSION = "2.0.1"
 # Описание игры (показывается по /info)
 GAME_INFO = f"🎮 AutoRPG (v{VERSION}) — Idle RPG для Telegram"
 # Токен Telegram бота (получить у @BotFather)

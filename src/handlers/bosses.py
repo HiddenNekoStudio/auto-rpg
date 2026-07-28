@@ -29,13 +29,16 @@ async def callback_boss_fight(update: Update, context: ContextTypes.DEFAULT_TYPE
     if not player:
         return
     
-    boss_id = query.data.replace("boss_fight_", "")
+    boss_id = query.data.removeprefix("boss_fight_")
     boss = await Boss.objects.get_or_none(boss_id=boss_id)
     if not boss or boss.defeated:
         if boss and boss.defeated:
             lang = player.lang or "ru"
             msg = "Этот босс уже побеждён!" if lang != "en" else "This boss is already defeated!"
-            await query.message.edit_text(msg)
+            try:
+                await query.message.edit_text(msg)
+            except Exception:
+                pass
         return
     
     lang = player.lang or "ru"
@@ -50,7 +53,10 @@ async def callback_boss_fight(update: Update, context: ContextTypes.DEFAULT_TYPE
             pass
         return
     
-    await query.message.delete()
+    try:
+        await query.message.delete()
+    except Exception:
+        pass
     
     await resolve_battle(context.bot, player, boss, forced=True, lang=lang)
 
@@ -67,8 +73,7 @@ async def callback_boss_leave(update: Update, context: ContextTypes.DEFAULT_TYPE
     else:
         lang = player.lang or "ru"
         
-        # Сохраняем ID босса и respawn time, чтобы не получать уведомления пока не вернётся
-        boss_id = query.data.replace("boss_leave_", "")
+        boss_id = query.data.removeprefix("boss_leave_")
         import json as json_module
         import time
         boss = await Boss.objects.get_or_none(boss_id=boss_id)
@@ -90,7 +95,10 @@ async def callback_boss_leave(update: Update, context: ContextTypes.DEFAULT_TYPE
     else:
         msg = "You left the boss zone."
     
-    await query.message.delete()
+    try:
+        await query.message.delete()
+    except Exception:
+        pass
 
 
 async def cmd_bosses(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -106,7 +114,7 @@ async def cmd_bosses(update: Update, context: ContextTypes.DEFAULT_TYPE):
     from game.bosses import format_boss_list as boss_list
     text = await boss_list(lang)
     
-    await update.message.reply_text(text, parse_mode="Markdown")
+    await update.message.reply_text(text, parse_mode="HTML")
 
 
 def register_handlers(app):

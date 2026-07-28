@@ -620,12 +620,13 @@ async def cmd_admin_onlinetime(update: Update, context: ContextTypes.DEFAULT_TYP
         await update.message.reply_text("Игрок не найден.")
         return
 
-    player.totalxp = minutes * 60
-    await player.update(_columns=["totalxp"])
+    player.total_online_seconds = minutes * 60
+    player.total_idle_seconds = 0
+    await player.update(_columns=["total_online_seconds", "total_idle_seconds"])
     admin_pl = await Player.objects.get_or_none(uid=update.effective_user.id)
     alang = admin_pl.lang or "ru" if admin_pl else "ru"
     await update.message.reply_text(
-        ("Время онлайна " if alang != "en" else "Online time ") + "*" + player.name + "* " + ("установлено: " if alang != "en" else "set to: ") + "*" + ctime(player.totalxp, alang) + "*.",
+        ("Время онлайна " if alang != "en" else "Online time ") + "*" + player.name + "* " + ("установлено: " if alang != "en" else "set to: ") + "*" + ctime(player.total_online_seconds, alang) + "*.",
         parse_mode="Markdown")
 
 

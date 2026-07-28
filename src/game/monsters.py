@@ -165,7 +165,7 @@ async def encounter_one(bot: Bot, player: Player, monster: str, monster_level: i
                 "👤 *УКЛОНЕНИЕ!*\nТы полностью уклонился от монстра!",
                 f"\n{msg_extra}" if msg_extra else "",
             ])
-        await send_to_players(bot, msg, player_uids=[player.uid])
+        await send_to_players(bot, msg, player_uids=[player.uid], parse_mode="HTML")
         return
 
     # Расчёт штрафа/награды (старая логика)

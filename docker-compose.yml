@@ -51,6 +51,8 @@ services:
         condition: service_healthy
     mem_limit: 512m
     cpus: 0.5
+    security_opt:
+      - "no-new-privileges:true"
 
     environment:
       - TELEGRAM_TOKEN=${TELEGRAM_TOKEN:-placeholder}
@@ -103,6 +105,8 @@ services:
       - API_URL=http://vpn:8081
       - PORT=8082
       - COMPOSE_PROJECT_NAME=tg_autorpg
+    security_opt:
+      - "no-new-privileges:true"
     logging:
       driver: "json-file"
       options:
@@ -111,9 +115,42 @@ services:
     mem_limit: 256m
     cpus: 0.3
 
+  vpn_monitor:
+    build: ./vpn_monitor
+    container_name: vpn_monitor
+    restart: unless-stopped
+    networks:
+      - autorpg_net
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:rw
+      - ./config.yaml:/etc/hysteria/config.yaml:rw
+      - ./vpn_monitor/servers.json:/app/servers.json:ro
+      - vpn_monitor_backups:/app/backups
+    environment:
+      - VPN_CONTAINER=hysteria_vpn
+      - SOCKS5_PROXY=socks5://hysteria_vpn:1080
+      - HTTP_PROXY=http://hysteria_vpn:8080
+      - CHECK_INTERVAL=30
+      - MAX_RESTART_ATTEMPTS=3
+      - RESTART_COOLDOWN=120
+      - SERVER_CHECK_TIMEOUT=3
+      - VPN_CONFIG_PATH=/etc/hysteria/config.yaml
+      - SERVERS_FILE=/app/servers.json
+      - BACKUP_DIR=/app/backups
+      - STARTUP_GRACE=20
+      - CONSECUTIVE_FAILURES_REQUIRED=3
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+    mem_limit: 128m
+    cpus: 0.2
+
 networks:
   autorpg_net:
     driver: bridge
 
 volumes:
   pgdata:
+  vpn_monitor_backups:

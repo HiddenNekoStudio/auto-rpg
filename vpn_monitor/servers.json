@@ -1,0 +1,26 @@
+[
+  {
+    "host": "fin.click-net.cloud",
+    "port": 443,
+    "sni": "fin.click-net.cloud",
+    "label": "FIN"
+  },
+  {
+    "host": "hs5.click-connect.online",
+    "port": 443,
+    "sni": "hs5.click-connect.online",
+    "label": "HS5"
+  },
+  {
+    "host": "austria.click-net.cloud",
+    "port": 443,
+    "sni": "austria.click-net.cloud",
+    "label": "AUSTRIA"
+  },
+  {
+    "host": "brhs.click-connect.network",
+    "port": 443,
+    "sni": "brhs.click-connect.network",
+    "label": "BRHS"
+  }
+]

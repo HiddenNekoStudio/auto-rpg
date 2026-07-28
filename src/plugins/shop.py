@@ -1,16 +1,8 @@
 """
-plugins/shop.py — Магазин сундуков
+plugins/shop.py — Магазин сундуков (карточный формат)
 
 Плагин для покупки сундуков с случайными предметами за золото.
-Цены настраиваются в config.py (SHOP_CHESTS).
-
-Конфигурация SHOP_CHESTS в config.py:
-    SHOP_CHESTS = {
-        "small": {"price": 10, "items": 1, "emoji": "🎒"},
-        "medium": {"price": 50, "items": 3, "emoji": "📦"},
-        "big": {"price": 100, "items": 5, "emoji": "🏴"},
-        "legendary": {"price": 500, "items": 3, "emoji": "✨", "guaranteed_rare": True},
-    }
+Каждый сундук — карточка с описанием, ценой и содержимым.
 """
 import logging
 
@@ -23,9 +15,44 @@ from bot import item_string
 
 logger = logging.getLogger(__name__)
 
+# ── Chest descriptions ──
+CHEST_INFO = {
+    "small": {
+        "desc_ru": "Обычный рюкзак с одним предметом",
+        "desc_en": "A common backpack with one item",
+        "items_ru": "1 предмет",
+        "items_en": "1 item",
+        "quality_ru": "Любое качество",
+        "quality_en": "Any quality",
+    },
+    "medium": {
+        "desc_ru": "Крепкий ящик с тремя предметами",
+        "desc_en": "A sturdy box with three items",
+        "items_ru": "3 предмета",
+        "items_en": "3 items",
+        "quality_ru": "Любое качество",
+        "quality_en": "Any quality",
+    },
+    "big": {
+        "desc_ru": "Огромный сундук с пятью предметами",
+        "desc_en": "A huge chest with five items",
+        "items_ru": "5 предметов",
+        "items_en": "5 items",
+        "quality_ru": "Любое качество",
+        "quality_en": "Any quality",
+    },
+    "legendary": {
+        "desc_ru": "Легендарный сундук с тремя предметами\n✨ Гарантирован Rare+",
+        "desc_en": "A legendary chest with three items\n✨ Guaranteed Rare+",
+        "items_ru": "3 предмета (Rare+)",
+        "items_en": "3 items (Rare+)",
+        "quality_ru": "Rare+ гарантировано",
+        "quality_en": "Rare+ guaranteed",
+    },
+}
+
 
 def default_shop_chests() -> dict:
-    """Дефолтные сундуки."""
     return {
         "small": {"price": 10, "items": 1, "emoji": "🎒"},
         "medium": {"price": 50, "items": 3, "emoji": "📦"},
@@ -35,19 +62,17 @@ def default_shop_chests() -> dict:
 
 
 def get_shop_chests() -> dict:
-    """Получить конфигурацию магазина из config."""
     import config as cfg
     return getattr(cfg, 'SHOP_CHESTS', default_shop_chests())
 
 
 def shop_t(lang: str, key: str, **kwargs) -> str:
-    """Получить перевод для магазина."""
     from i18n import t
     return t(lang, key, **kwargs)
 
 
 def build_shop_keyboard(lang: str) -> InlineKeyboardMarkup:
-    """Построить клавиатуру магазина."""
+    """Построить клавиатуру магазина с карточками."""
     chests = get_shop_chests()
     buttons = []
 
@@ -55,7 +80,7 @@ def build_shop_keyboard(lang: str) -> InlineKeyboardMarkup:
         name = shop_t(lang, f"shop_chest_{chest_id}")
         price = chest_data['price']
         emoji = chest_data.get('emoji', '📦')
-        btn_text = f"{emoji} {name} ({price}{'g' if lang == 'en' else 'з'})"
+        btn_text = f"{emoji} {name} — {price}💰"
         buttons.append(InlineKeyboardButton(btn_text, callback_data=f"shop_buy_{chest_id}"))
 
     rows = []
@@ -70,15 +95,43 @@ def build_shop_keyboard(lang: str) -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(rows)
 
 
+def build_shop_text(player, lang: str) -> str:
+    """Построить текст магазина с карточками сундуков."""
+    from ui.icons import SEP
+    chests = get_shop_chests()
+    
+    lines = [
+        "🏪 <b>МАГАЗИН</b>" if lang != "en" else "🏪 <b>SHOP</b>",
+        f"💰 Твоё золото: <b>{player.gold}</b>" if lang != "en" else f"💰 Your gold: <b>{player.gold}</b>",
+        SEP,
+    ]
+    
+    for chest_id, chest_data in chests.items():
+        name = shop_t(lang, f"shop_chest_{chest_id}")
+        price = chest_data['price']
+        emoji = chest_data.get('emoji', '📦')
+        info = CHEST_INFO.get(chest_id, {})
+        desc = info.get(f"desc_{lang}", info.get("desc_ru", ""))
+        items_count = chest_data.get('items', 1)
+        
+        affordable = "✅" if player.gold >= price else "❌"
+        
+        lines.append(f"{emoji} <b>{name}</b> — {price}💰 {affordable}")
+        lines.append(f"   {desc}")
+        lines.append("")
+    
+    return "\n".join(lines)
+
+
 async def handle_shop_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Обработчик callback магазина."""
+    """Обработчик callback магазина — HTML mode."""
     query = update.callback_query
     await query.answer()
 
     user = query.from_user
     player = await Player.objects.get_or_none(uid=user.id)
     lang = (player.lang or "ru") if player else "ru"
-    from handlers.user import safe_edit
+    from core.telegram_utils import safe_edit
 
     if not player:
         await safe_edit(query, shop_t(lang, "not_registered"))
@@ -87,9 +140,9 @@ async def handle_shop_callback(update: Update, context: ContextTypes.DEFAULT_TYP
     data = query.data
 
     if data == "shop_menu":
-        text = shop_t(lang, "shop_title", gold=player.gold)
+        text = build_shop_text(player, lang)
         keyboard = build_shop_keyboard(lang)
-        await safe_edit(query, text, parse_mode="Markdown", reply_markup=keyboard)
+        await safe_edit(query, text, parse_mode="HTML", reply_markup=keyboard)
         return
 
     if data.startswith("shop_buy_"):
@@ -111,38 +164,45 @@ async def handle_shop_callback(update: Update, context: ContextTypes.DEFAULT_TYP
         await player.update(_columns=["gold"])
 
         chest_name = shop_t(lang, f"shop_chest_{chest_type}")
-        text = shop_t(lang, "shop_bought", name=player.name, chest=chest_name, price=price) + "\n\n"
+        emoji = chest.get('emoji', '📦')
+        
+        from ui.icons import SEP
+        lines = [
+            f"{emoji} <b>{chest_name}</b>",
+            f"💰 Потрачено: {price} золота" if lang != "en" else f"💰 Spent: {price} gold",
+            SEP,
+            "🎁 <b>Получено:</b>" if lang != "en" else "🎁 <b>Received:</b>",
+        ]
 
         for _ in range(items_count):
             item, slot, replaced = await get_item(player)
             item_str = item_string(item, lang)
-            text += f"• {item_str}"
-            if replaced:
-                text += f" {shop_t(lang, 'loot_upgrade')}\n"
-            else:
-                text += "\n"
+            upgrade = f" ⬆️ <b>УЛУЧШЕНИЕ!</b>" if lang != "en" else f" ⬆️ <b>UPGRADE!</b>" if replaced else ""
+            lines.append(f"• {item_str}{upgrade}")
+
+        text = "\n".join(lines)
 
         keyboard = InlineKeyboardMarkup([
             [
                 InlineKeyboardButton(shop_t(lang, "shop_again"), callback_data=f"shop_buy_{chest_type}"),
             ],
             [
-                InlineKeyboardButton(shop_t(lang, "shop_menu"), callback_data="shop_menu"),
+                InlineKeyboardButton(shop_t(lang, "shop_menu"), callback_data="shop_chests"),
             ],
             [
-                InlineKeyboardButton(shop_t(lang, "menu"), callback_data="menu_back"),
+                InlineKeyboardButton(shop_t(lang, "menu"), callback_data="menu_shop"),
             ],
         ])
 
-        await safe_edit(query, text, parse_mode="Markdown", reply_markup=keyboard)
+        await safe_edit(query, text, parse_mode="HTML", reply_markup=keyboard)
 
 
 def show_shop_menu(query, player, lang: str):
     """Показать меню магазина."""
-    from handlers.user import safe_edit
-    text = shop_t(lang, "shop_title", gold=player.gold)
+    from core.telegram_utils import safe_edit
+    text = build_shop_text(player, lang)
     keyboard = build_shop_keyboard(lang)
-    return safe_edit(query, text, parse_mode="Markdown", reply_markup=keyboard)
+    return safe_edit(query, text, parse_mode="HTML", reply_markup=keyboard)
 
 
 def register_shop_handlers(app: Application):

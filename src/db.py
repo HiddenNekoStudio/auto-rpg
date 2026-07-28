@@ -252,44 +252,44 @@ class Player(ormar.Model):
     monster_deaths: int = ormar.Integer(default=0)
     
     weapon: str = ormar.JSON(default={
-        "name": "Кулаки", "quality": "Базовый", "condition": "Пыльный",
-        "prefix": "", "suffix": "", "dps": 20, "hp_bonus": 0, "def_bonus": 0, "mp_bonus": 0,
-        "rank": "Common", "flair": None,
+        "name": "Кулаки", "name_en": "Fists", "quality": "Базовый", "quality_en": "Basic", "condition": "Пыльный", "condition_en": "Dusty",
+        "prefix": "", "prefix_en": "", "suffix": "", "suffix_en": "", "dps": 20, "hp_bonus": 0, "def_bonus": 0, "mp_bonus": 0,
+        "rank": "Common", "flair": None, "flair_en": None,
     })
     shield: str = ormar.JSON(default={
-        "name": "Деревянная доска", "quality": "Базовый", "condition": "Пыльный",
-        "prefix": "", "suffix": "", "dps": 10, "hp_bonus": 0, "def_bonus": 0, "mp_bonus": 0,
-        "rank": "Common", "flair": None,
+        "name": "Деревянная доска", "name_en": "Wooden Board", "quality": "Базовый", "quality_en": "Basic", "condition": "Пыльный", "condition_en": "Dusty",
+        "prefix": "", "prefix_en": "", "suffix": "", "suffix_en": "", "dps": 10, "hp_bonus": 0, "def_bonus": 0, "mp_bonus": 0,
+        "rank": "Common", "flair": None, "flair_en": None,
     })
     helmet: str = ormar.JSON(default={
-        "name": "Железный шлем", "quality": "Базовый", "condition": "Пыльный",
-        "prefix": "", "suffix": "", "dps": 10, "hp_bonus": 0, "def_bonus": 0, "mp_bonus": 0,
-        "rank": "Common", "flair": None,
+        "name": "Железный шлем", "name_en": "Iron Helm", "quality": "Базовый", "quality_en": "Basic", "condition": "Пыльный", "condition_en": "Dusty",
+        "prefix": "", "prefix_en": "", "suffix": "", "suffix_en": "", "dps": 10, "hp_bonus": 0, "def_bonus": 0, "mp_bonus": 0,
+        "rank": "Common", "flair": None, "flair_en": None,
     })
     chest: str = ormar.JSON(default={
-        "name": "Тряпьё", "quality": "Базовый", "condition": "Пыльный",
-        "prefix": "", "suffix": "", "dps": 10, "hp_bonus": 0, "def_bonus": 0, "mp_bonus": 0,
-        "rank": "Common", "flair": None,
+        "name": "Тряпьё", "name_en": "Rags", "quality": "Базовый", "quality_en": "Basic", "condition": "Пыльный", "condition_en": "Dusty",
+        "prefix": "", "prefix_en": "", "suffix": "", "suffix_en": "", "dps": 10, "hp_bonus": 0, "def_bonus": 0, "mp_bonus": 0,
+        "rank": "Common", "flair": None, "flair_en": None,
     })
     gloves: str = ormar.JSON(default={
-        "name": "Обмотки", "quality": "Базовый", "condition": "Пыльный",
-        "prefix": "", "suffix": "", "dps": 10, "hp_bonus": 0, "def_bonus": 0, "mp_bonus": 0,
-        "rank": "Common", "flair": None,
+        "name": "Обмотки", "name_en": "Hand Wraps", "quality": "Базовый", "quality_en": "Basic", "condition": "Пыльный", "condition_en": "Dusty",
+        "prefix": "", "prefix_en": "", "suffix": "", "suffix_en": "", "dps": 10, "hp_bonus": 0, "def_bonus": 0, "mp_bonus": 0,
+        "rank": "Common", "flair": None, "flair_en": None,
     })
     boots: str = ormar.JSON(default={
-        "name": "Деревянные башмаки", "quality": "Базовый", "condition": "Пыльный",
-        "prefix": "", "suffix": "", "dps": 10, "hp_bonus": 0, "def_bonus": 0, "mp_bonus": 0,
-        "rank": "Common", "flair": None,
+        "name": "Деревянные башмаки", "name_en": "Wooden Clogs", "quality": "Базовый", "quality_en": "Basic", "condition": "Пыльный", "condition_en": "Dusty",
+        "prefix": "", "prefix_en": "", "suffix": "", "suffix_en": "", "dps": 10, "hp_bonus": 0, "def_bonus": 0, "mp_bonus": 0,
+        "rank": "Common", "flair": None, "flair_en": None,
     })
     ring: str = ormar.JSON(default={
-        "name": "Железное кольцо", "quality": "Базовый", "condition": "Пыльный",
-        "prefix": "", "suffix": "", "dps": 10, "hp_bonus": 0, "def_bonus": 0, "mp_bonus": 0,
-        "rank": "Common", "flair": None,
+        "name": "Железное кольцо", "name_en": "Iron Ring", "quality": "Базовый", "quality_en": "Basic", "condition": "Пыльный", "condition_en": "Dusty",
+        "prefix": "", "prefix_en": "", "suffix": "", "suffix_en": "", "dps": 10, "hp_bonus": 0, "def_bonus": 0, "mp_bonus": 0,
+        "rank": "Common", "flair": None, "flair_en": None,
     })
     amulet: str = ormar.JSON(default={
-        "name": "Железный амулет", "quality": "Базовый", "condition": "Пыльный",
-        "prefix": "", "suffix": "", "dps": 10, "hp_bonus": 0, "def_bonus": 0, "mp_bonus": 0,
-        "rank": "Common", "flair": None,
+        "name": "Железный амулет", "name_en": "Iron Amulet", "quality": "Базовый", "quality_en": "Basic", "condition": "Пыльный", "condition_en": "Dusty",
+        "prefix": "", "prefix_en": "", "suffix": "", "suffix_en": "", "dps": 10, "hp_bonus": 0, "def_bonus": 0, "mp_bonus": 0,
+        "rank": "Common", "flair": None, "flair_en": None,
     })
 
     @classmethod

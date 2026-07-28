@@ -25,13 +25,13 @@ async def cmd_setjob(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None
         await update.message.reply_text(t(lang, "not_registered"))
         return
     if not player.onboarding_done and player.level < 10:
-        await update.message.reply_text(t(lang, "job_low_level"), parse_mode="Markdown")
+        await update.message.reply_text(t(lang, "job_low_level"), parse_mode="HTML")
         return
 
     if not context.args:
         from handlers.user import class_keyboard
         await update.message.reply_text(
-            t(lang, "choose_class"), parse_mode="Markdown",
+            t(lang, "choose_class"), parse_mode="HTML",
             reply_markup=class_keyboard(lang))
         return
 
@@ -61,7 +61,7 @@ async def cmd_setjob(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None
     t_key = "job_set" if not old_job else "class_changed"
     display = class_display(job_name, lang)
     await update.message.reply_text(t(lang, t_key, class_name=display),
-                                    parse_mode="Markdown", reply_markup=keyboard)
+                                    parse_mode="HTML", reply_markup=keyboard)
 
 
 async def callback_job_prompt(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -76,10 +76,10 @@ async def callback_job_prompt(update: Update, context: ContextTypes.DEFAULT_TYPE
     ]])
     if not player or player.level < 10:
         await safe_edit(query, t(lang, "job_low_level"),
-                        parse_mode="Markdown", reply_markup=keyboard)
+                        parse_mode="HTML", reply_markup=keyboard)
         return
     await safe_edit(query, t(lang, "job_prompt", job=player.job or ("Recruit" if lang == "en" else "Новобранец")),
-                    parse_mode="Markdown", reply_markup=keyboard)
+                    parse_mode="HTML", reply_markup=keyboard)
 
 
 async def cmd_help(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -89,7 +89,7 @@ async def cmd_help(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     player = await Player.objects.get_or_none(uid=user.id)
     lang = (player.lang or "ru") if player else "ru"
     await update.message.reply_text(
-        t(lang, "info_commands"), parse_mode="Markdown",
+        t(lang, "info_commands"), parse_mode="HTML",
         reply_markup=main_menu_keyboard(lang))
 
 
@@ -106,7 +106,7 @@ async def cmd_alert(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     player.optin = new_optin
     status_str = t(lang, "notif_on_txt") if player.optin else t(lang, "notif_off_txt")
     await update.message.reply_text(t(lang, "notif_status", status=status_str),
-                                    parse_mode="Markdown")
+                                    parse_mode="HTML")
 
 
 async def cmd_quest(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:

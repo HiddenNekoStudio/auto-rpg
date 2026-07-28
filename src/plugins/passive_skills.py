@@ -176,7 +176,7 @@ class PassiveSkillsPlugin(GamePlugin):
                     ])
                     
                     from bot import item_string
-                    await safe_edit(query, msg + "\n\n" + (f"Цена: {price}💰" if lang != "en" else f"Price: {price}💰"), parse_mode="Markdown", reply_markup=keyboard)
+                    await safe_edit(query, msg + "\n\n" + (f"Цена: {price}💰" if lang != "en" else f"Price: {price}💰"), parse_mode="HTML", reply_markup=keyboard)
                 else:
                     await query.answer(msg, show_alert=True)
                 return
@@ -263,9 +263,9 @@ class PassiveSkillsPlugin(GamePlugin):
         max_slots = 5
         
         if lang != "en":
-            title = f"🎯 *Пассивные Навыки*\n\n💰 Золото: *{player.gold}*\n📦 Слоты: {equipped_count}/{max_slots}"
+            title = f"🎯 <b>Пассивные Навыки</b>\n\n💰 Золото: <b>{player.gold}</b>\n📦 Слоты: {equipped_count}/{max_slots}"
         else:
-            title = f"🎯 *Passive Skills*\n\n💰 Gold: *{player.gold}*\n📦 Slots: {equipped_count}/{max_slots}"
+            title = f"🎯 <b>Passive Skills</b>\n\n💰 Gold: <b>{player.gold}</b>\n📦 Slots: {equipped_count}/{max_slots}"
         
         keyboard = [
             [InlineKeyboardButton("🛒 Магазин" if lang != "en" else "🛒 Shop", callback_data="passives_shop")],
@@ -274,7 +274,7 @@ class PassiveSkillsPlugin(GamePlugin):
             [InlineKeyboardButton("◀️ Меню" if lang != "en" else "◀️ Menu", callback_data="menu_back")],
         ]
         
-        await safe_edit(query, title, parse_mode="Markdown", reply_markup=InlineKeyboardMarkup(keyboard))
+        await safe_edit(query, title, parse_mode="HTML", reply_markup=InlineKeyboardMarkup(keyboard))
     
     async def _show_shop(self, query, player, lang: str):
         from handlers.user import safe_edit
@@ -288,9 +288,9 @@ class PassiveSkillsPlugin(GamePlugin):
         owned_count = await PlayerPassive.objects.filter(player_uid=player.uid).count()
         
         if lang != "en":
-            title = f"🛒 *Магазин Пассивок*\n\nКуплено: {owned_count}/10\n"
+            title = f"🛒 <b>Магазин Пассивок</b>\n\nКуплено: {owned_count}/10\n"
         else:
-            title = f"🛒 *Passive Shop*\n\nOwned: {owned_count}/10\n"
+            title = f"🛒 <b>Passive Shop</b>\n\nOwned: {owned_count}/10\n"
         
         lines = [title, ""]
         buttons = []
@@ -313,7 +313,7 @@ class PassiveSkillsPlugin(GamePlugin):
             
             lock = "🔒" if player.level < req_level else ""
             level_tag = f" (lvl{req_level}+)" if req_level else ""
-            lines.append(f"{lock}{icon} *{name}* — {effective}💰{level_tag} [{rarity}]")
+            lines.append(f"{lock}{icon} <b>{name}</b> — {effective}💰{level_tag} [{rarity}]")
             
             btn_text = f"{lock}{icon} {name} ({effective}💰)"
             buttons.append(InlineKeyboardButton(btn_text, callback_data=f"passive_buy_{pid}"))
@@ -327,7 +327,7 @@ class PassiveSkillsPlugin(GamePlugin):
         
         rows.append([InlineKeyboardButton("◀️ Назад" if lang != "en" else "◀️ Back", callback_data="passives_menu")])
         
-        await safe_edit(query, "\n".join(lines), parse_mode="Markdown", reply_markup=InlineKeyboardMarkup(rows))
+        await safe_edit(query, "\n".join(lines), parse_mode="HTML", reply_markup=InlineKeyboardMarkup(rows))
     
     async def _show_equipped(self, query, player, lang: str):
         from handlers.user import safe_edit
@@ -341,13 +341,13 @@ class PassiveSkillsPlugin(GamePlugin):
         max_lv = getattr(cfg, 'PASSIVE_MAX_LEVEL', 100)
         
         if lang != "en":
-            title = "⚔️ *Экипированные*\n\n"
+            title = "⚔️ <b>Экипированные</b>\n\n"
         else:
-            title = "⚔️ *Equipped*\n\n"
+            title = "⚔️ <b>Equipped</b>\n\n"
         
         if not equipped:
             title += "Нет экипированных навыков" if lang != "en" else "No equipped skills"
-            await safe_edit(query, title, parse_mode="Markdown")
+            await safe_edit(query, title, parse_mode="HTML")
             return
         
         for ep in equipped:
@@ -366,7 +366,7 @@ class PassiveSkillsPlugin(GamePlugin):
             bar = "█" * filled + "░" * (bar_len - filled)
             
             racial_tag = "🧬 " if ep.passive_id in racial_ids else ""
-            title += f"{racial_tag}{icon} *{name}* Lv.{level}\n[{bar}] {xp}/{threshold}"
+            title += f"{racial_tag}{icon} <b>{name}</b> Lv.{level}\n[{bar}] {xp}/{threshold}"
             if level < max_lv:
                 cost = calc_upgrade_cost(level)
                 title += f"\n⬆ Upgrade: {cost}💰"
@@ -397,7 +397,7 @@ class PassiveSkillsPlugin(GamePlugin):
         rows = list(buttons)
         rows.append([InlineKeyboardButton("◀️ Назад" if lang != "en" else "◀️ Back", callback_data="passives_menu")])
         
-        await safe_edit(query, title, parse_mode="Markdown", reply_markup=InlineKeyboardMarkup(rows))
+        await safe_edit(query, title, parse_mode="HTML", reply_markup=InlineKeyboardMarkup(rows))
     
     async def _show_passive_info(self, query, player, passive_id: str, lang: str):
         from handlers.user import safe_edit
@@ -422,9 +422,9 @@ class PassiveSkillsPlugin(GamePlugin):
         base_val = effect.get_value(1)
         
         if lang != "en":
-            title = f"{icon} *{name}*\n\n📜 {desc}\n\n📊 Базовое значение: {base_val:.2f}\n📈 Макс. значение (Lv{effect.max_level}): {max_val:.2f}\n⭐ Редкость: {effect.rarity}"
+            title = f"{icon} <b>{name}</b>\n\n📜 {desc}\n\n📊 Базовое значение: {base_val:.2f}\n📈 Макс. значение (Lv{effect.max_level}): {max_val:.2f}\n⭐ Редкость: {effect.rarity}"
         else:
-            title = f"{icon} *{name}*\n\n📜 {desc}\n\n📊 Base value: {base_val:.2f}\n📈 Max value (Lv{effect.max_level}): {max_val:.2f}\n⭐ Rarity: {effect.rarity}"
+            title = f"{icon} <b>{name}</b>\n\n📜 {desc}\n\n📊 Base value: {base_val:.2f}\n📈 Max value (Lv{effect.max_level}): {max_val:.2f}\n⭐ Rarity: {effect.rarity}"
         
         if owned:
             level = owned.level
@@ -485,7 +485,7 @@ class PassiveSkillsPlugin(GamePlugin):
                 [InlineKeyboardButton("◀️ Назад" if lang != "en" else "◀️ Back", callback_data="passives_shop")],
             ]
         
-        await safe_edit(query, title, parse_mode="Markdown", reply_markup=InlineKeyboardMarkup(keyboard))
+        await safe_edit(query, title, parse_mode="HTML", reply_markup=InlineKeyboardMarkup(keyboard))
 
 
 _passive_skills_plugin: PassiveSkillsPlugin = None

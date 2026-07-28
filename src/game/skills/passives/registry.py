@@ -395,6 +395,11 @@ class PassiveSkillRegistry:
                 if res.message:
                     result.message += f"\n{res.message}"
                 
+                now = int(time.time())
+                ep.cooldown_until = now + effect.cooldown
+                ep.last_triggered_at = now
+                await ep.update(_columns=["cooldown_until", "last_triggered_at"])
+                
                 if ep.level < getattr(cfg, 'PASSIVE_MAX_LEVEL', 100):
                     await cls.add_xp_and_check_levelup(ep)
         
@@ -431,6 +436,11 @@ class PassiveSkillRegistry:
                     result.healing += res.healing
                 if res.message:
                     result.message += f"\n{res.message}"
+                
+                now = int(time.time())
+                ep.cooldown_until = now + effect.cooldown
+                ep.last_triggered_at = now
+                await ep.update(_columns=["cooldown_until", "last_triggered_at"])
                 
                 if ep.level < getattr(cfg, 'PASSIVE_MAX_LEVEL', 100):
                     await cls.add_xp_and_check_levelup(ep)
@@ -473,6 +483,11 @@ class PassiveSkillRegistry:
                     result.damage_bonus = res.damage_bonus
                 if res.message:
                     result.message += f"\n{res.message}"
+                
+                now = int(time.time())
+                ep.cooldown_until = now + effect.cooldown
+                ep.last_triggered_at = now
+                await ep.update(_columns=["cooldown_until", "last_triggered_at"])
                 
                 if ep.level < getattr(cfg, 'PASSIVE_MAX_LEVEL', 100):
                     await cls.add_xp_and_check_levelup(ep)

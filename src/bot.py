@@ -157,7 +157,16 @@ async def post_init(app: Application) -> None:
         BotCommand("bosses",  "Список боссов"),
         BotCommand("help",    "Список команд"),
         BotCommand("starshop","Star Магазин"),
-    ])
+    ], language_code="ru")
+    await app.bot.set_my_commands([
+        BotCommand("start",   "Main menu"),
+        BotCommand("profile", "Your profile"),
+        BotCommand("quest",   "Current quest"),
+        BotCommand("passives","Passive skills"),
+        BotCommand("bosses",  "Boss list"),
+        BotCommand("help",    "Command list"),
+        BotCommand("starshop","Star Shop"),
+    ], language_code="en")
 
     # Запускаем HTTP сервер для healthcheck в том же event loop
     from health import start_http_server

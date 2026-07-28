@@ -18,6 +18,8 @@ from db import Player, PlayerQuest
 import config as cfg
 from data.locations import find_location, format_location
 from core.telegram_utils import safe_edit
+from ui.icons import SEP, QUEST_CAT
+from ui.bars import quest_bar
 
 _offer_messages: dict[str, tuple[int, int]] = {}
 
@@ -72,10 +74,71 @@ async def get_player_locked_quest(player) -> Optional[PlayerQuest]:
         return None
 
 
-async def cmd_myquests(update, context):
-    """Показать квестборд."""
-    from telegram import InlineKeyboardButton, InlineKeyboardMarkup
+def _quest_text(quests, player, lang: str) -> str:
+    """Построить текст квестборда."""
+    from data.quest_config import get_max_slots_for_player, get_slot_cost
     
+    max_slots = get_max_slots_for_player(player.level)
+    used_slots = sum(get_slot_cost(q.quest_type) for q in quests)
+    
+    lines = [
+        "🎯 <b>КВЕСТБОРД</b>" if lang != "en" else "🎯 <b>QUEST BOARD</b>",
+        f"⚡ Слоты: <b>{used_slots}/{max_slots}</b>" if lang != "en" else f"⚡ Slots: <b>{used_slots}/{max_slots}</b>",
+        SEP,
+    ]
+    
+    for i, q in enumerate(quests, 1):
+        icon = QUEST_CAT.get(q.category, "📋")
+        bar = quest_bar(q.progress, q.target_count)
+        deadline = ""
+        if q.expires_at:
+            left = q.expires_at - int(time.time())
+            if left > 0:
+                hours = left // 3600
+                minutes = (left % 3600) // 60
+                deadline = f" ⏰ {hours}ч {minutes}мин" if lang != "en" else f" ⏰ {hours}h {minutes}m"
+            else:
+                deadline = " ⛔"
+        
+        lines.append(f"<b>{i}.</b> {icon} <b>{q.title}</b>")
+        lines.append(f"   {bar} {q.progress}/{q.target_count}{deadline}")
+        lines.append(f"   🎁 +{q.reward_xp} XP, +{q.reward_gold} Gold")
+        lines.append("")
+    
+    if not quests:
+        no_slots = f"⚡ Слоты: <b>0/{max_slots}</b>" if lang != "en" else f"⚡ Slots: <b>0/{max_slots}</b>"
+        lines.extend([
+            no_slots, "",
+            t(lang, "quest_no_quests"),
+        ])
+    
+    return "\n".join(lines)
+
+
+def _quest_keyboard(quests, max_slots: int, used_slots: int, lang: str) -> InlineKeyboardMarkup:
+    """Построить клавиатуру квестборда."""
+    rows = []
+    for i, q in enumerate(quests):
+        abandon_label = "🚫 Отменить" if lang != "en" else "🚫 Abandon"
+        rows.append([InlineKeyboardButton(f"{abandon_label} {i+1}",
+                     callback_data=f"quest_abandon_{q.quest_key}")])
+    
+    if used_slots < max_slots:
+        rows.append([InlineKeyboardButton(
+            "＋ Взять квест" if lang != "en" else "＋ New quest",
+            callback_data="quest_new"
+        )])
+    
+    rows.append([
+        InlineKeyboardButton("🔄", callback_data="menu_quest"),
+        InlineKeyboardButton("🏠", callback_data="menu_back"),
+    ])
+    
+    return InlineKeyboardMarkup(rows)
+
+
+async def cmd_myquests(update, context):
+    """Показать квестборд — HTML mode."""
     player = await Player.objects.get_or_none(uid=update.effective_user.id)
     if not player:
         await update.message.reply_text(t("not_registered", "ru"))
@@ -92,62 +155,13 @@ async def cmd_myquests(update, context):
     max_slots = get_max_slots_for_player(player.level)
     used_slots = sum(get_slot_cost(q.quest_type) for q in quests)
     
-    CATEGORY_ICONS = {
-        "kill_monster": "🗡️", "earn_xp": "💰", "win_duel": "🤺",
-        "explore_any": "📍", "kill_boss": "🐉",
-        "survive": "💀", "win_battle": "🔥",
-        "collect_rare": "💎",
-    }
-    
-    import time
-    quest_board_title = "🎯 *Квестборд*" if lang != "en" else "🎯 *Quest Board*"
-    slots_label = f"{'⚡ Слоты: ' if lang != 'en' else '⚡ Slots: '}{used_slots}/{max_slots}"
-    lines = [quest_board_title, slots_label, ""]
-    
-    for i, q in enumerate(quests, 1):
-        icon = CATEGORY_ICONS.get(q.category, "📋")
-        deadline = ""
-        if q.expires_at:
-            left = q.expires_at - int(time.time())
-            if left > 0:
-                hours = left // 3600
-                minutes = (left % 3600) // 60
-                deadline = f" ⏰ {hours}h {minutes}m" if lang == "en" else f" ⏰ {hours}ч {minutes}мин"
-            else:
-                deadline = " ⛔"
-        
-        lines.append(f"{i}. {icon} {q.title}")
-        lines.append(f"   ⏳ {q.progress}/{q.target_count}{deadline}")
-        lines.append(f"   🎁 +{q.reward_xp} XP, +{q.reward_gold} Gold")
-        lines.append("")
-    
-    
-    if not quests:
-        no_slots_label = f"{'⚡ Слоты: ' if lang != 'en' else '⚡ Slots: '}0/{max_slots}"
-        lines = [quest_board_title, no_slots_label, "",
-                 t(lang, "quest_no_quests"), ""]
-    
-    rows = []
-    for i, q in enumerate(quests):
-        abandon_label = "🚫 Отменить" if lang != "en" else "🚫 Abandon"
-        rows.append([InlineKeyboardButton(f"{abandon_label} {i+1}",
-                     callback_data=f"quest_abandon_{q.quest_key}")])
-    
-    if used_slots < max_slots:
-        rows.append([InlineKeyboardButton(
-            "＋ Взять новый квест" if lang != "en" else "＋ New quest",
-            callback_data="quest_new"
-        )])
-    
-    rows.append([
-        InlineKeyboardButton("🔄", callback_data="menu_quest"),
-        InlineKeyboardButton("🏠", callback_data="menu_back"),
-    ])
+    text = _quest_text(quests, player, lang)
+    keyboard = _quest_keyboard(quests, max_slots, used_slots, lang)
     
     await update.message.reply_text(
-        "\n".join(lines),
-        parse_mode="Markdown",
-        reply_markup=InlineKeyboardMarkup(rows)
+        text,
+        parse_mode="HTML",
+        reply_markup=keyboard
     )
 
 
@@ -160,7 +174,6 @@ async def accept_quest_callback(update, context):
     if len(parts) < 3:
         return
 
-    #quest_accept_quest_town_1234 -> parts = ["quest", "accept", "quest", "town", "1234"]
     quest_id = "_".join(parts[2:])
     player = await Player.objects.get_or_none(uid=query.from_user.id)
     if not player:
@@ -169,8 +182,6 @@ async def accept_quest_callback(update, context):
     lang = player.lang or "ru"
 
     try:
-        logging.error(f"DEBUG: accept quest_id={quest_id}, player_uid={player.uid}")
-        
         quest = await PlayerQuest.objects.filter(
             quest_key=quest_id,
             player_uid=player.uid
@@ -180,11 +191,8 @@ async def accept_quest_callback(update, context):
             quest.status = "active"
             await quest.update(_columns=["status"])
             text = t("location_quest_accept", lang)
-            await query.message.edit_text(text)
-            logging.error(f"DEBUG: quest accepted: {quest.id}, status={quest.status}")
+            await safe_edit(query, text, parse_mode="HTML")
         else:
-            logging.error(f"DEBUG: quest NOT FOUND by quest_key - fallback to legacy fields")
-            # Fallback: ищем по quest_id_str или quest_id
             quest = await PlayerQuest.objects.filter(
                 quest_id_str=quest_id,
                 player_uid=player.uid
@@ -195,13 +203,10 @@ async def accept_quest_callback(update, context):
                     player_uid=player.uid
                 ).get_or_none()
             if quest:
-                logging.error(f"DEBUG: found by legacy field! id={quest.id}")
                 quest.status = "active"
                 await quest.update(_columns=["status"])
                 text = t("location_quest_accept", lang)
-                await query.message.edit_text(text)
-            else:
-                logging.error(f"DEBUG: quest still not found")
+                await safe_edit(query, text, parse_mode="HTML")
     except Exception as e:
         logging.error(f"Accept quest error: {e}", exc_info=True)
         pass
@@ -216,7 +221,6 @@ async def decline_quest_callback(update, context):
     if len(parts) < 3:
         return
 
-    #quest_decline_quest_town_1234 -> parts = ["quest", "decline", "quest", "town", "1234"]
     quest_id = "_".join(parts[2:])
     player = await Player.objects.get_or_none(uid=query.from_user.id)
     if not player:
@@ -225,7 +229,6 @@ async def decline_quest_callback(update, context):
     lang = player.lang or "ru"
 
     try:
-        # Ищем по quest_key (UUID), fallback на legacy поля
         quest = await PlayerQuest.objects.filter(
             quest_key=quest_id,
             player_uid=player.uid
@@ -241,19 +244,18 @@ async def decline_quest_callback(update, context):
             await quest.delete()
         
         text = t("location_quest_decline", lang)
-        await query.message.edit_text(text)
+        await safe_edit(query, text, parse_mode="HTML")
     except Exception as e:
         logging.error(f"Decline quest error: {e}")
         pass
 
 
-QUEST_OFFER_COOLDOWN = 300  # 5 minutes between quest offers
-QUEST_LOCATION_COOLDOWN = 180  # 3 minutes before offering quest on same location
+QUEST_OFFER_COOLDOWN = 300
+QUEST_LOCATION_COOLDOWN = 180
 
 
 async def offer_quest(bot, player, quest_type, location=None):
     """Предложить квест игроку - создаёт и отправляет уведомление"""
-    import random
     from data.quests import generate_quest
     from data.quest_config import get_max_slots_for_player
     from game.quests import get_quest_slots_available, can_offer_new_quests
@@ -276,10 +278,15 @@ async def offer_quest(bot, player, quest_type, location=None):
         slots = await get_quest_slots_available(player)
         max_slots = get_max_slots_for_player(player.level)
         if slots <= 0:
+            text = (
+                f"🎯 <b>{'Quests unavailable' if player_lang == 'en' else 'Квесты недоступны'}</b>\n\n"
+                f"{'You already have' if player_lang == 'en' else 'У тебя уже'} <b>{max_slots}</b> "
+                f"{'active quests. Complete at least one to get a new one!' if player_lang == 'en' else 'активных квестов. Заверши хотя бы один, чтобы получить новый!'}"
+            )
             await bot.send_message(
                 chat_id=player.uid,
-                text=f"🎯 *{'Quests unavailable' if player_lang == 'en' else 'Квесты недоступны'}*\n\n{'You already have' if player_lang == 'en' else 'У тебя уже'} {max_slots} {'active quests. Complete at least one to get a new one!' if player_lang == 'en' else 'активных квестов. Заверши хотя бы один, чтобы получить новый!'}",
-                parse_mode="Markdown"
+                text=text,
+                parse_mode="HTML"
             )
         return None
     
@@ -345,8 +352,8 @@ async def offer_quest(bot, player, quest_type, location=None):
             accept_notify = "Принятие через 1 сек..." if player_lang != "en" else "Accepting in 1 sec..."
             await bot.send_message(
                 chat_id=player.uid,
-                text=f"🎯 *{quest.title}*\n\n{accept_notify}",
-                parse_mode="Markdown"
+                text=f"🎯 <b>{quest.title}</b>\n\n{accept_notify}",
+                parse_mode="HTML"
             )
         return quest
     else:
@@ -359,11 +366,11 @@ async def offer_quest(bot, player, quest_type, location=None):
             ]
         ])
         
-        quest_header = "🎯 *Новый квест!*" if player_lang != "en" else "🎯 *New quest!*"
+        quest_header = "🎯 <b>Новый квест!</b>" if player_lang != "en" else "🎯 <b>New quest!</b>"
         reward_label = "🎁 Награда: " if player_lang != "en" else "🎁 Reward: "
         text = (
             f"{quest_header}\n\n"
-            f"*{quest.title}*\n\n"
+            f"<b>{quest.title}</b>\n\n"
             f"{quest.description}\n\n"
             f"{reward_label}+{quest.reward_xp} XP, +{quest.reward_gold} Gold"
         )
@@ -371,7 +378,7 @@ async def offer_quest(bot, player, quest_type, location=None):
         msg = await bot.send_message(
             chat_id=player.uid,
             text=text,
-            parse_mode="Markdown",
+            parse_mode="HTML",
             reply_markup=keyboard
         )
         _offer_messages[quest.quest_key] = (player.uid, msg.message_id)
@@ -381,7 +388,7 @@ async def offer_quest(bot, player, quest_type, location=None):
 
 
 async def check_location_quests(bot, player):
-    """Проверить квесты при входе на локацию (новая система)."""
+    """Проверить квесты при входе на локацию."""
     if not player:
         return
 
@@ -464,15 +471,14 @@ async def update_quest_progress(player, quest_type: str, amount: int = 1):
             if quest.progress >= quest.target_count:
                 quest.status = "completed"
                 quest.completed_at = int(datetime.now().timestamp())
-                await quest.update()
                 player.totalquests = (player.totalquests or 0) + 1
-                await player.update(_columns=["totalquests"])
                 
-                    # Снять блокировку локации при выполнении квеста
                 if quest.location_locked:
                     quest.location_locked = False
                     quest.target_location_id = ""
-                    await quest.update()
+                
+                await quest.update()
+                await player.update(_columns=["totalquests"])
     except Exception:
         pass
 
@@ -509,17 +515,16 @@ async def schedule_auto_accept(player_uid: int, quest_key: str, mode: str, bot):
         xp, gold = calculate_rewards(quest.quest_type, player.level)
         lang = player.lang or "ru"
         
-        text = f"✅ {t(lang, 'quest_accepted')} {quest.title}\n\n🎁 XP: +{xp} 💰 +{gold}"
-        await send_to_players(bot, text, player_uids=[player_uid], parse_mode="Markdown")
+        text = f"✅ {t(lang, 'quest_accepted')} <b>{quest.title}</b>\n\n🎁 XP: +{xp} 💰 +{gold}"
+        await send_to_players(bot, text, player_uids=[player_uid], parse_mode="HTML")
 
 
 # ═══════════════════════════════════════════════════════════════
-# SHOW PLAYER QUESTS - Показать список принятых квестов
+# SHOW PLAYER QUESTS
 # ═══════════════════════════════════════════════════════════════
 
 async def show_player_quests(bot, player):
-    """Показать список активных принятых квестов игрока"""
-    import time
+    """Показать список активных квестов — HTML mode"""
     lang = player.lang or "ru"
     
     quests = await PlayerQuest.objects.filter(
@@ -535,31 +540,12 @@ async def show_player_quests(bot, player):
         await bot.send_message(
             chat_id=player.uid,
             text=text,
-            parse_mode="Markdown",
+            parse_mode="HTML",
             reply_markup=keyboard
         )
         return
     
-    lines = [t(lang, "quest_my_quests"), ""]
-    
-    for i, q in enumerate(quests, 1):
-        # Дедлайн
-        deadline = ""
-        if q.expires_at:
-            left = q.expires_at - int(time.time())
-            if left > 0:
-                hours = left // 3600
-                minutes = (left % 3600) // 60
-                deadline = f" ⏰ {hours}h {minutes}m" if lang == "en" else f" ⏰ {hours}ч {minutes}мин"
-            else:
-                deadline = " ⛔ Expired" if lang == "en" else " ⛔ Просрочен"
-        
-        lines.append(f"{i}. {q.title}")
-        lines.append(f"   {'⏳ Progress:' if lang == 'en' else '⏳ Прогресс:'} {q.progress}/{q.target_count}{deadline}")
-        lines.append(f"   🎁 +{q.reward_xp} XP, +{q.reward_gold} Gold")
-        lines.append("")
-    
-    text = "\n".join(lines)
+    text = _quest_text(quests, player, lang)
     
     keyboard = InlineKeyboardMarkup([
         [InlineKeyboardButton(t(lang, "refresh"), callback_data="menu_quest")],
@@ -569,17 +555,17 @@ async def show_player_quests(bot, player):
     await bot.send_message(
         chat_id=player.uid,
         text=text,
-        parse_mode="Markdown",
+        parse_mode="HTML",
         reply_markup=keyboard
     )
 
 
 # ═══════════════════════════════════════════════════════════════
-# QUEST DETAIL - Подробности квеста
+# QUEST DETAIL
 # ═══════════════════════════════════════════════════════════════
 
 async def callback_quest_detail(update, context):
-    """Показать подробности квеста"""
+    """Показать подробности квеста — HTML mode"""
     query = update.callback_query
     await query.answer()
     
@@ -596,15 +582,14 @@ async def callback_quest_detail(update, context):
     quest = await PlayerQuest.objects.filter(quest_key=quest_key).get_or_none()
     
     if not quest:
-        await query.message.edit_text("❌ Quest not found" if lang == "en" else "❌ Квест не найден")
+        await safe_edit(query, "❌ Quest not found" if lang == "en" else "❌ Квест не найден")
         return
     
     if quest.player_uid != player.uid:
         return
     
-    import time
+    bar = quest_bar(quest.progress, quest.target_count)
     
-    # Дедлайн
     deadline = ""
     penalty = ""
     if quest.expires_at:
@@ -625,12 +610,12 @@ async def callback_quest_detail(update, context):
         else:
             deadline = "⛔ Просрочен" if lang != "en" else "⛔ Expired"
     
-    text = f"🎯 *{quest.title}* ({quest.status})\n\n"
+    text = f"🎯 <b>{quest.title}</b> ({quest.status})\n\n"
     
     if quest.location_id:
         text += f"{'📍 Локация: ' if lang != 'en' else '📍 Location: '}{quest.location_id}\n"
     
-    text += f"{'⏳ Прогресс: ' if lang != 'en' else '⏳ Progress: '}{quest.progress}/{quest.target_count}\n"
+    text += f"{'⏳ Прогресс: ' if lang != 'en' else '⏳ Progress: '}{bar} {quest.progress}/{quest.target_count}\n"
     
     if deadline:
         text += f"{deadline}\n\n"
@@ -640,7 +625,6 @@ async def callback_quest_detail(update, context):
     if penalty:
         text += f"\n{penalty}"
     
-    # Кнопки
     if quest.status == "active":
         keyboard = InlineKeyboardMarkup([
             [InlineKeyboardButton(
@@ -654,24 +638,18 @@ async def callback_quest_detail(update, context):
             [InlineKeyboardButton(t(lang, "back"), callback_data="menu_quest")]
         ])
     
-    await query.message.edit_text(
-        text,
-        parse_mode="Markdown",
-        reply_markup=keyboard
-    )
+    await safe_edit(query, text, parse_mode="HTML", reply_markup=keyboard)
 
 
 # ═══════════════════════════════════════════════════════════════
-# NEW SYSTEM CALLBACKS - UUID based
+# NEW SYSTEM CALLBACKS
 # ═══════════════════════════════════════════════════════════════
 
 async def accept_quest_callback_new(update, context):
-    """Принять квест (новая система с UUID)."""
+    """Принять квест (новая система с UUID) — HTML mode."""
     query = update.callback_query
     await query.answer()
     
-    # Извлечь quest_key из callback_data
-    # format: quest_accept_UUID36
     parts = query.data.split("_")
     if len(parts) < 3:
         return
@@ -681,21 +659,19 @@ async def accept_quest_callback_new(update, context):
         return
     lang = player.lang or "ru"
     
-    quest_key = "_".join(parts[2:])  # UUID
+    quest_key = "_".join(parts[2:])
     quest = await PlayerQuest.objects.filter(quest_key=quest_key).get_or_none()
     
     if not quest:
-        await query.message.edit_text("❌ Quest not found" if lang == "en" else "❌ Квест не найден")
+        await safe_edit(query, "❌ Quest not found" if lang == "en" else "❌ Квест не найден")
         return
     
     if quest.player_uid != player.uid:
         return
     
     if quest.status != "offered":
-        await query.message.edit_text("⏰ Квест уже принят или неактивен" if lang != "en" else "⏰ Quest already accepted or inactive")
+        await safe_edit(query, "⏰ Квест уже принят или неактивен" if lang != "en" else "⏰ Quest already accepted or inactive")
         return
-    
-    import time
     
     deadline = ""
     if quest.expires_at:
@@ -717,21 +693,21 @@ async def accept_quest_callback_new(update, context):
     
     goal_label = "🎯 Цель: " if lang != "en" else "🎯 Goal: "
     reward_label = "🎁 Награда: " if lang != "en" else "🎁 Reward: "
-    auto_label = "_Квест выполняется автоматически!_" if lang != "en" else "_Quest runs automatically!_"
+    auto_label = "<i>Квест выполняется автоматически!</i>" if lang != "en" else "<i>Quest runs automatically!</i>"
     text = (
         f"{t(lang, 'quest_accepted')}\n\n"
-        f"*{quest.title}*\n\n"
+        f"<b>{quest.title}</b>\n\n"
         f"{quest.description}\n\n"
         f"{goal_label}{quest.target_id} ({quest.progress}/{quest.target_count})\n"
         f"{reward_label}+{quest.reward_xp} XP, +{quest.reward_gold} Gold"
         f"{deadline}\n\n"
         f"{auto_label}"
     )
-    await query.message.edit_text(text, parse_mode="Markdown")
+    await safe_edit(query, text, parse_mode="HTML")
 
 
 async def decline_quest_callback_new(update, context):
-    """Отклонить квест (новая система с UUID)."""
+    """Отклонить квест (новая система с UUID) — HTML mode."""
     query = update.callback_query
     await query.answer()
     
@@ -753,9 +729,9 @@ async def decline_quest_callback_new(update, context):
             try:
                 await query.message.delete()
             except Exception:
-                await query.message.edit_text("❌ Quest not found" if lang == "en" else "❌ Квест не найден")
+                await safe_edit(query, "❌ Quest not found" if lang == "en" else "❌ Квест не найден")
         else:
-            await query.message.edit_text("❌ Quest not found" if lang == "en" else "❌ Квест не найден")
+            await safe_edit(query, "❌ Quest not found" if lang == "en" else "❌ Квест не найден")
         return
     
     if quest.player_uid != player.uid:
@@ -766,25 +742,14 @@ async def decline_quest_callback_new(update, context):
     quest.completed_at = int(time.time())
     await quest.update()
     
-    # Очистить location_locked если нет других location_locked квестов
-    remaining_locked = await PlayerQuest.objects.filter(
-        player_uid=player.uid,
-        status="active",
-        location_locked=True
-    ).count()
-    
-    if remaining_locked == 0:
-        pass  # Нет заблокированных - всё ок
-    
-    lang = player.lang or "ru"
     try:
         await query.message.delete()
     except Exception:
-        await query.message.edit_text(t(lang, "location_quest_decline"))
+        await safe_edit(query, t(lang, "location_quest_decline"))
 
 
 async def abandon_quest_callback(update, context):
-    """Отменить квест."""
+    """Отменить квест — HTML mode."""
     query = update.callback_query
     await query.answer()
 
@@ -801,30 +766,27 @@ async def abandon_quest_callback(update, context):
     quest = await PlayerQuest.objects.filter(quest_key=quest_key).get_or_none()
 
     if not quest:
-        await query.message.edit_text("❌ Quest not found" if lang == "en" else "❌ Квест не найден")
+        await safe_edit(query, "❌ Quest not found" if lang == "en" else "❌ Квест не найден")
         return
 
     if quest.player_uid != player.uid:
         return
     if quest.status != "active":
-        await query.message.edit_text("⏰ Квест неактивен" if lang != "en" else "⏰ Quest inactive")
+        await safe_edit(query, "⏰ Квест неактивен" if lang != "en" else "⏰ Quest inactive")
         return
 
-    # Снять блокировку локации при отмене
-    was_locked = quest.location_locked
-    import time
     quest.status = "abandoned"
-    quest.cooldown_until = int(time.time()) + 600  # 10 минут
+    quest.cooldown_until = int(time.time()) + 600
     quest.location_locked = False
     quest.target_location_id = ""
     await quest.update()
 
     abandon_msg = "🚫 Квест отменён\n\n⏱️ 10 минут кулдаун" if lang != "en" else "🚫 Quest cancelled\n\n⏱️ 10 min cooldown"
-    await query.message.edit_text(abandon_msg)
+    await safe_edit(query, abandon_msg)
 
 
 async def cmd_quest_new(update, context):
-    """Показать выбор типа нового квеста."""
+    """Показать выбор типа нового квеста — HTML mode."""
     query = update.callback_query
     await query.answer()
     player = await Player.objects.get_or_none(uid=query.from_user.id)
@@ -859,13 +821,13 @@ async def cmd_quest_new(update, context):
     
     rows.append([InlineKeyboardButton(t(lang, "back"), callback_data="menu_quest")])
     
-    text = "🎯 *Новый квест*\n\nВыбери тип:" if lang != "en" else "🎯 *New quest*\n\nChoose type:"
-    await safe_edit(query, text, parse_mode="Markdown",
+    text = "🎯 <b>Новый квест</b>\n\nВыбери тип:" if lang != "en" else "🎯 <b>New quest</b>\n\nChoose type:"
+    await safe_edit(query, text, parse_mode="HTML",
                     reply_markup=InlineKeyboardMarkup(rows))
 
 
 async def take_quest_callback(update, context):
-    """Взять квест выбранного типа."""
+    """Взять квест выбранного типа — HTML mode."""
     query = update.callback_query
     await query.answer()
     player = await Player.objects.get_or_none(uid=query.from_user.id)
@@ -891,7 +853,6 @@ async def take_quest_callback(update, context):
         await safe_edit(query, "❌ Не удалось создать квест" if lang != "en" else "❌ Failed to create quest")
         return
 
-    import time
     quest = await PlayerQuest.objects.create(
         player_uid=player.uid,
         quest_id=0,
@@ -919,17 +880,16 @@ async def take_quest_callback(update, context):
 
     text = (
         f"{t(lang, 'quest_accepted')}\n\n"
-        f"*{quest.title}*\n\n"
+        f"<b>{quest.title}</b>\n\n"
         f"{quest.description}\n\n"
         f"🎯 {quest.progress}/{quest.target_count}\n"
         f"🎁 +{quest.reward_xp} XP, +{quest.reward_gold} Gold"
     )
-    await safe_edit(query, text, parse_mode="Markdown")
+    await safe_edit(query, text, parse_mode="HTML")
 
 
 def register_handlers(app):
     """Регистрация обработчиков квестов."""
-    from telegram.ext import CommandHandler, CallbackQueryHandler
     app.add_handler(CommandHandler("myquests", cmd_myquests))
     app.add_handler(CommandHandler("quests", cmd_myquests))
     app.add_handler(CallbackQueryHandler(accept_quest_callback, pattern="^quest_accept_"))

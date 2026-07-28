@@ -402,23 +402,24 @@ class MonsterEncountersPlugin(GamePlugin):
         msg = None
         poison = 0
         heal_mult = max(0.5, 1.0 - streak * 0.025)
+        lang = player.lang or "ru"
 
         if name == "heal":
             heal = int(player.get_max_hp() * 0.3)
             actual = min(heal, player.get_max_hp() - player_hp)
             actual = int(actual * heal_mult)
             player_hp += actual
-            msg = f"💚 +{actual} HP" + (" (fatigue)" if heal_mult < 1.0 else "")
+            msg = f"💚 +{actual} HP" + ((" (усталость)" if lang != "en" else " (fatigue)") if heal_mult < 1.0 else "")
         elif name == "smite":
             p_dmg = int(p_dmg * 2.0)
-            msg = "✨ *Смайт!* ×2"
+            msg = "✨ *Smite!* ×2" if lang == "en" else "✨ *Смайт!* ×2"
         elif name == "fireball":
             p_dmg = int(p_dmg * 1.5)
-            msg = "🔥 *Огненный шар!* ×1.5"
+            msg = "🔥 *Fireball!* ×1.5" if lang == "en" else "🔥 *Огненный шар!* ×1.5"
         elif name == "poison":
             p_dmg = int(p_dmg * 0.8)
             poison = int(p_dmg * 0.3)
-            msg = "☠️ *Ядовитый дротик!*"
+            msg = "☠️ *Poison Dart!*" if lang == "en" else "☠️ *Ядовитый дротик!*"
         elif name == "purifying_light":
             from game.skills.base import PurifyingLightSkill
             pct = PurifyingLightSkill.get_heal_pct(skill_lv)
@@ -426,12 +427,13 @@ class MonsterEncountersPlugin(GamePlugin):
             actual = min(heal, player.get_max_hp() - player_hp)
             actual = int(actual * heal_mult)
             player_hp += actual
-            msg = f"✨ *Очищающий свет Lv.{skill_lv}!* +{actual} HP" + (" (fatigue)" if heal_mult < 1.0 else "")
+            msg = f"✨ *Purifying Light Lv.{skill_lv}!* +{actual} HP" if lang == "en" else f"✨ *Очищающий свет Lv.{skill_lv}!* +{actual} HP"
+            msg += ((" (усталость)" if lang != "en" else " (fatigue)") if heal_mult < 1.0 else "")
         elif name == "seismic_slam":
             from game.skills.base import SeismicSlamSkill
             mult = SeismicSlamSkill.get_damage_mult(skill_lv)
             p_dmg = int(p_dmg * mult)
-            msg = f"💥 *Сейсмический удар Lv.{skill_lv}!* ×{mult:.1f} + оглушение"
+            msg = f"💥 *Seismic Slam Lv.{skill_lv}!* ×{mult:.1f} + stun" if lang == "en" else f"💥 *Сейсмический удар Lv.{skill_lv}!* ×{mult:.1f} + оглушение"
         elif name == "quick_volley":
             from game.skills.base import QuickVolleySkill
             mult = QuickVolleySkill.get_hit_mult(skill_lv)
@@ -439,7 +441,7 @@ class MonsterEncountersPlugin(GamePlugin):
             for _ in range(3):
                 total += int(p_dmg * mult)
             p_dmg = total
-            msg = f"🏹 *Быстрый залп Lv.{skill_lv}!* 3×{mult:.1f} удара"
+            msg = f"🏹 *Quick Volley Lv.{skill_lv}!* 3×{mult:.1f} hits" if lang == "en" else f"🏹 *Быстрый залп Lv.{skill_lv}!* 3×{mult:.1f} удара"
 
         return p_dmg, player_hp, msg, poison
 
@@ -766,7 +768,7 @@ class MonsterEncountersPlugin(GamePlugin):
                         skill_msgs.append("💥 *Dark Burst!*")
                     elif passive_id == "stun":
                         player_stunned = True
-                        skill_msgs.append("💫 *Stun!* — игрок теряет ход")
+                        skill_msgs.append("💫 *Stun!* — player loses turn" if lang == "en" else "💫 *Stun!* — игрок теряет ход")
 
             # Active monster skill attempt
             monster_skill = self._select_monster_skill(monster_hp, monster_max, round_num, monster_skill_cd)

@@ -1,33 +1,12 @@
 """handlers/alignment.py — /align"""
 
-import asyncio
 import logging
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
-from telegram.error import NetworkError, RetryAfter, TimedOut
 from telegram.ext import Application, CommandHandler, CallbackQueryHandler, ContextTypes
 
 from db import Player
 from i18n import t
-
-
-async def safe_edit(query, text, keyboard=None, parse_mode="Markdown", retries=3, reply_markup=None):
-    keyboard = keyboard or reply_markup
-    for attempt in range(retries):
-        try:
-            await query.edit_message_text(text, parse_mode=parse_mode, reply_markup=keyboard)
-            return
-        except RetryAfter as e:
-            await asyncio.sleep(e.retry_after + 1)
-        except (NetworkError, TimedOut):
-            if attempt < retries - 1:
-                await asyncio.sleep(1.5 * (attempt + 1))
-            else:
-                logging.warning("safe_edit failed after %d attempts", retries)
-        except Exception as e:
-            if "Message is not modified" in str(e):
-                return
-            logging.warning("safe_edit error: %s", e)
-            return
+from core.telegram_utils import safe_edit
 
 
 def _align_keyboard(lang):
@@ -48,7 +27,7 @@ async def cmd_align(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not player:
         await update.message.reply_text(t(lang, "not_registered"))
         return
-    await update.message.reply_text(t(lang, "align_title"), parse_mode="Markdown",
+    await update.message.reply_text(t(lang, "align_title"), parse_mode="HTML",
                                     reply_markup=_align_keyboard(lang))
 
 
@@ -58,7 +37,7 @@ async def callback_align_menu(update: Update, context: ContextTypes.DEFAULT_TYPE
     user = query.from_user
     player = await Player.objects.get_or_none(uid=user.id)
     lang = (player.lang or "ru") if player else "ru"
-    await safe_edit(query, t(lang, "align_title"), parse_mode="Markdown",
+    await safe_edit(query, t(lang, "align_title"), parse_mode="HTML",
                     reply_markup=_align_keyboard(lang))
 
 
@@ -87,7 +66,7 @@ async def callback_align(update: Update, context: ContextTypes.DEFAULT_TYPE):
         player.align = choice
         await player.update(_columns=["align"])
         await safe_edit(query, t(lang, "align_set", align=align_name),
-                        parse_mode="Markdown", reply_markup=keyboard)
+                        parse_mode="HTML", reply_markup=keyboard)
 
 
 def register(app: Application):
