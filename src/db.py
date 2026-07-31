@@ -358,8 +358,9 @@ class Player(ormar.Model):
         return total
     
     def get_max_hp(self) -> int:
-        """Max HP = база (100 + level*15) + бонус со снаряжения."""
-        return 100 + self.level * 15 + self._get_equip_sum("hp_bonus")
+        """Max HP = база (100 + level*15) + бонус со снаряжения, × расовый множитель."""
+        from game.races import get_race_hp_mult
+        return int((100 + self.level * 15 + self._get_equip_sum("hp_bonus")) * get_race_hp_mult(self.race))
 
     def get_max_mp(self) -> int:
         """Max MP = база (50 + level*8) + бонус со снаряжения."""

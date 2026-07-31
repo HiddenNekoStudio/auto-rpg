@@ -130,8 +130,8 @@ STRINGS = {
         "char_hub":         "⚙️ <b>Персонаж</b>\n\n🎖️ Ур. {level}  {race}  {job}  {align}\n━━━━━━━━━━━━━━━━━━━━━━\nВыбери что изменить:",
         "char_class_title": "💼 <b>Выбери класс</b>\n\nТекущий: {job}\n{level_info}",
         "char_race_title":  "🧬 <b>Выбери расу</b>\n\nТекущая: {race}",
-        "char_align_title": "⚖️ <b>Мировоззрение</b>\n\n😇 <b>Добрый</b> — +10% к силе, шанс Смайта\n😐 <b>Нейтральный</b> — без бонусов\n😈 <b>Злой</b> — Подлый удар, кража вещей\n\nТекущее: {align}",
-        "align_title":      "⚖️ <b>Выбери мировоззрение:</b>\n\n😇 <b>Добрый</b> — +10% к силе, шанс Смайта\n😐 <b>Нейтральный</b> — без бонусов\n😈 <b>Злой</b> — Подлый удар, кража вещей",
+        "char_align_title": "⚖️ <b>Мировоззрение</b>\n\nТекущее: {align}",
+        "align_title":      "⚖️ <b>Выбери мировоззрение:</b>",
         "align_already":    "Ты уже {align}.",
         "align_set":        "✅ Теперь ты <b>{align}</b>!",
         "job_low_level":    "❌ Нужно <b>10 уровень</b> для смены класса!",
@@ -194,12 +194,12 @@ STRINGS = {
         "info_commands":    "💬 *Команды:*\n/start — Главное меню\n/profile — Твой профиль\n/quest — Квесты\n/passives — Пассивные навыки\n/bosses — Список боссов\n/setjob — Сменить класс (10+ ур.)\n/align — Мировоззрение\n/alert — Уведомления вкл/выкл\n/help — Список команд\n/starshop — Star Магазин",
 
         # Классы
-        "choose_class":     "💼 *Выбери класс:*\n\n╔══════════════════════════════╗\n║ ⚔️ *Воин*     — +10% DPS    ║\n║ 🏹 *Лучник*   — +10% крит   ║\n║ 🔮 *Маг*      — +15% XP     ║\n║ 🗡️ *Разбойник* — +15% уклон ║\n║ 🛡️ *Паладин*  — +15% защита ║\n╚══════════════════════════════╝",
+        "choose_class":     "💼 <b>Выбери класс:</b>",
         "class_set":        "✅ Класс выбран: *{class_name}*",
         "class_changed":    "🔄 Класс сменён: *{class_name}*",
 
         # Расы
-        "choose_race":      "⚔️ *Выбери расу своего героя:*\n\n👤 *Человек* — 🍀 20% шанс избежать штрафа от монстра\n⛏️ *Гном* — 🛡️ +15% к боевой силе\n🌿 *Эльф* — 🏹 +10% к бонусу при победе над монстром",
+        "choose_race":      "⚔️ Выбери расу своего героя:",
         "race_set":         "✅ Раса выбрана: *{race}*",
         "race_changed":     "✅ Раса изменена на: *{race}*",
         "btn_race":         "🧬 Сменить расу",
@@ -370,8 +370,8 @@ STRINGS = {
         "char_hub":         "⚙️ <b>Character</b>\n\n🎖️ Lv. {level}  {race}  {job}  {align}\n━━━━━━━━━━━━━━━━━━━━━━\nChoose what to change:",
         "char_class_title": "💼 <b>Choose class</b>\n\nCurrent: {job}\n{level_info}",
         "char_race_title":  "🧬 <b>Choose race</b>\n\nCurrent: {race}",
-        "char_align_title": "⚖️ <b>Alignment</b>\n\n😇 <b>Good</b> — +10% gear power, Smite chance\n😐 <b>Neutral</b> — no bonuses\n😈 <b>Evil</b> — Backstab, steal items\n\nCurrent: {align}",
-        "align_title":      "⚖️ <b>Choose alignment:</b>\n\n😇 <b>Good</b> — +10% gear power, Smite chance\n😐 <b>Neutral</b> — no bonuses\n😈 <b>Evil</b> — Backstab, steal items",
+        "char_align_title": "⚖️ <b>Alignment</b>\n\nCurrent: {align}",
+        "align_title":      "⚖️ <b>Choose alignment:</b>",
         "align_already":    "You are already {align}.",
         "align_set":        "✅ You are now <b>{align}</b>!",
         "job_low_level":    "❌ You need <b>level 10</b> to change class!",
@@ -425,7 +425,7 @@ STRINGS = {
         "went_offline":     "⏸️ *{name}*, your hero went to rest!\n\nYou were inactive for more than {mins} min. and went offline — XP is no longer gained.\n\nOpen the bot and press /start to continue your adventure! ⚔️",
 
         # Race
-        "choose_race":      "⚔️ *Choose your hero's race:*\n\n👤 *Human* — 🍀 20% chance to avoid monster penalty\n⛏️ *Dwarf* — 🛡️ +15% combat power\n🌿 *Elf* — 🏹 +10% bonus on monster victory",
+        "choose_race":      "⚔️ Choose your hero's race:",
         "race_set":         "✅ Race selected: *{race}*",
         "race_changed":     "✅ Race changed to: *{race}*",
         "btn_race":         "🧬 Change race",
@@ -441,12 +441,12 @@ STRINGS = {
         "info_commands":    "💬 *Commands:*\n/start — Main menu\n/profile — Your profile\n/quest — Quests\n/passives — Passive skills\n/bosses — Boss list\n/setjob — Change class (10+ lvl)\n/align — Alignment\n/alert — Toggle notifications\n/help — Command list\n/starshop — Star Shop",
 
         # Classes
-        "choose_class":     "💼 <b>Choose your class:</b>\n\n╔══════════════════════════════════╗\n║ ⚔️ <b>Warrior</b>  — +10% DPS        ║\n║ 🏹 <b>Archer</b>   — +10% crit       ║\n║ 🔮 <b>Mage</b>     — +15% XP         ║\n║ 🗡️ <b>Rogue</b>    — +15% dodge      ║\n║ 🛡️ <b>Paladin</b>  — +15% defense    ║\n╚══════════════════════════════════╝",
+        "choose_class":     "💼 <b>Choose your class:</b>",
         "class_set":        "✅ Class selected: <b>{class_name}</b>",
         "class_changed":    "🔄 Class changed: <b>{class_name}</b>",
 
         # Race
-        "choose_race":      "⚔️ *Choose your hero's race:*\n\n👤 *Human* — 🍀 20% chance to avoid monster penalty\n⛏️ *Dwarf* — 🛡️ +15% combat power\n🌿 *Elf* — 🏹 +10% bonus on monster victory",
+        "choose_race":      "⚔️ Choose your hero's race:",
         "race_set":         "✅ Race selected: *{race}*",
         "race_changed":     "✅ Race changed to: *{race}*",
         "btn_race":         "🧬 Change race",

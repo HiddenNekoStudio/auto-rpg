@@ -57,3 +57,20 @@ def class_display(job: str, lang: str = "ru") -> str:
             name = c["name_ru"] if lang == "ru" else c["name_en"]
             return f"{c['icon']} {name}"
     return job
+
+
+def get_class_desc(job: str, lang: str = "ru") -> str:
+    for c in CLASSES.values():
+        if c["name_ru"] == job or c["name_en"] == job:
+            return c["desc_en"] if lang == "en" else c["desc_ru"]
+    return ""
+
+
+def class_selector_text(lang: str = "ru") -> str:
+    sep = "━" * 21
+    parts = []
+    for c in CLASSES.values():
+        name = c["name_ru"] if lang == "ru" else c["name_en"]
+        desc = c["desc_ru"] if lang == "ru" else c["desc_en"]
+        parts.append(f"<b>{c['icon']} {name}</b>\n{sep}\n   {desc}")
+    return "\n\n".join(parts)

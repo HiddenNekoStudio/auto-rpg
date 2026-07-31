@@ -7,6 +7,7 @@ from telegram.ext import Application, CommandHandler, CallbackQueryHandler, Cont
 from db import Player
 from i18n import t
 from core.telegram_utils import safe_edit
+from game.alignments import alignment_selector_text
 
 
 def _align_keyboard(lang):
@@ -27,7 +28,8 @@ async def cmd_align(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not player:
         await update.message.reply_text(t(lang, "not_registered"))
         return
-    await update.message.reply_text(t(lang, "align_title"), parse_mode="HTML",
+    await update.message.reply_text(t(lang, "align_title") + "\n\n" + alignment_selector_text(lang),
+                                    parse_mode="HTML",
                                     reply_markup=_align_keyboard(lang))
 
 
@@ -37,7 +39,8 @@ async def callback_align_menu(update: Update, context: ContextTypes.DEFAULT_TYPE
     user = query.from_user
     player = await Player.objects.get_or_none(uid=user.id)
     lang = (player.lang or "ru") if player else "ru"
-    await safe_edit(query, t(lang, "align_title"), parse_mode="HTML",
+    await safe_edit(query, t(lang, "align_title") + "\n\n" + alignment_selector_text(lang),
+                    parse_mode="HTML",
                     reply_markup=_align_keyboard(lang))
 
 

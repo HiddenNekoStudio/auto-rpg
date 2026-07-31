@@ -16,7 +16,7 @@ from i18n import t, tip
 from core.cache import TTLCache
 from core.telegram_utils import safe_edit
 from ui.format import esc
-from plugins.vip_shop import get_prestige_bonus, has_active_xp_boost, has_active_speed_boost, has_active_protect
+from plugins.vip_shop import get_prestige_bonus, has_active_xp_boost, has_active_speed_boost, has_active_protect, buy_prestige
 from data.locations import format_location
 
 SLOT_EMOJI = {
@@ -139,8 +139,19 @@ def _race_display(player) -> str:
     return races.get(race, races["human"])
 
 
+def _race_choose_text(lang: str = "ru") -> str:
+    """Полный текст экрана выбора расы: бонусы + расовые скиллы."""
+    from game.races import race_selector_text
+    text = t(lang, "choose_race") + "\n\n" + race_selector_text(lang)
+    if lang == "en":
+        text += f"\n\n🔄 Change race: {cfg.RACE_CHANGE_COST} 🎫 tokens (first pick is free)"
+    else:
+        text += f"\n\n🔄 Смена расы: {cfg.RACE_CHANGE_COST} 🎫 токенов (первый выбор бесплатно)"
+    return text
+
+
 def _class_display(player) -> str:
-    """Отображаемое имя класса с бонусом для игрока."""
+    """Отображаемое имя класса для игрока."""
     from game.classes import CLASSES
     lang = player.lang or "ru"
     job = player.job
@@ -149,8 +160,7 @@ def _class_display(player) -> str:
     for c in CLASSES.values():
         if c["name_ru"] == job or c["name_en"] == job:
             name = c["name_ru"] if lang == "ru" else c["name_en"]
-            desc = c["desc_ru"] if lang == "ru" else c["desc_en"]
-            return f"{c['icon']} {name} ({desc})"
+            return f"{c['icon']} {name}"
     return job
 
 
@@ -179,7 +189,7 @@ async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not player.race:
         lang = player.lang
         await update.message.reply_text(
-            t(lang, "choose_race"),
+            _race_choose_text(lang),
             parse_mode="HTML",
             reply_markup=race_keyboard(lang),
         )
@@ -187,8 +197,10 @@ async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     if not player.onboarding_done:
         lang = player.lang
+        from game.classes import class_selector_text
+        text = t(lang, "choose_class") + "\n\n" + class_selector_text(lang)
         await update.message.reply_text(
-            t(lang, "choose_class"),
+            text,
             parse_mode="HTML",
             reply_markup=class_keyboard(lang),
         )
@@ -303,7 +315,7 @@ async def callback_set_lang(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     # После выбора языка — если раса ещё не выбрана, показываем выбор расы
     if not player.race:
-        await safe_edit(query, t(lang, "choose_race"), parse_mode="HTML",
+        await safe_edit(query, _race_choose_text(lang), parse_mode="HTML",
                         reply_markup=race_keyboard(lang))
         return
     await safe_edit(query, t(lang, "lang_set"), parse_mode="HTML",
@@ -325,31 +337,31 @@ def _align_str(player) -> str:
 async def _profile_text_async(player) -> str:
     """Новый профиль — карточка персонажа. HTML mode."""
     from db import PlayerQuest, ClanMember, Clan
-    from ui.icons import SEP, ONLINE, OFFLINE, IDLE, GOLD, BOLT, STAR, LEVEL_UP, MAP, SLOT as SLOT_ICON
+    from ui.icons import SEP, SLOT as SLOT_ICON
     from ui.bars import hp_bar, mp_bar, skill_bar
 
     lang = player.lang or "ru"
     nextlevel = max(1, player.nextxp - player.currentxp)
     align     = _align_str(player)
 
-    if player.online:
-        status_icon = ONLINE
-    elif player.idle_since > 0:
-        status_icon = IDLE
-    else:
-        status_icon = OFFLINE
-
     # ── Header ──
-    lines = [f"{status_icon} <b>{esc(player.name)}</b>", SEP]
+    name_label = "Имя" if lang != "en" else "Name"
+    lines = [f"👤 {name_label}: {esc(player.name)}"]
 
     # ── Identity ──
     race_name = _race_display(player)
     job_name  = _class_display(player)
 
     lines.append(f"🎖️ {'Уровень' if lang != 'en' else 'Level'}: {player.level}")
-    lines.append(f"🧬 {'Раса' if lang != 'en' else 'Race'}: {race_name}")
-    lines.append(f"💼 {'Класс' if lang != 'en' else 'Class'}: {job_name}")
-    lines.append(f"⚖️ {'Мировоззрение' if lang != 'en' else 'Alignment'}: {align}")
+    from game.races import get_race_desc
+    race_desc = get_race_desc(player.race, lang)
+    lines.append(f"🧬 {'Раса' if lang != 'en' else 'Race'}: {race_name}" + (f"   {race_desc}" if race_desc else ""))
+    from game.classes import get_class_desc
+    class_desc = get_class_desc(player.job, lang)
+    lines.append(f"💼 {'Класс' if lang != 'en' else 'Class'}: {job_name}" + (f"   {class_desc}" if class_desc else ""))
+    from game.alignments import get_align_desc
+    align_desc = get_align_desc(player.align, lang)
+    lines.append(f"⚖️ {'Мировоззрение' if lang != 'en' else 'Alignment'}: {align}" + (f"   {align_desc}" if align_desc else ""))
 
     # Clan lookup
     cm = await ClanMember.objects.filter(player_uid=player.uid).get_or_none()
@@ -358,6 +370,8 @@ async def _profile_text_async(player) -> str:
         if clan:
             tag = f" [{clan.tag}]" if clan.tag else ""
             lines.append(f"🏰 {'Клан' if lang != 'en' else 'Clan'}: {clan.name}{tag}")
+
+    lines.append(SEP)
 
     # ── Combat summary (HP/MP/Def/DPS/DR) ──
     player_hp    = max(1, player.hp or player.get_max_hp())
@@ -639,6 +653,16 @@ async def callback_set_race(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     # Remove old racial skills if changing race
     if player.race and player.race != race:
+        cost = getattr(cfg, "RACE_CHANGE_COST", 5)
+        if player.tokens < cost:
+            await query.answer(
+                f"🎫 Not enough tokens! Need {cost}" if lang == "en"
+                else f"🎫 Не хватает токенов! Нужно {cost}",
+                show_alert=True,
+            )
+            return
+        player.tokens -= cost
+
         old_passive_id = cfg.RACIAL_PASSIVES.get(player.race)
         if old_passive_id:
             old_racial = await PlayerPassive.objects.filter(
@@ -656,7 +680,8 @@ async def callback_set_race(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 await old_act.delete()
 
     player.race = race
-    await player.update(_columns=["race"])
+    player.sync_max_hp_mp()
+    await player.update(_columns=["race", "tokens", "max_hp", "max_mp"])
 
     # Grant racial passive (auto-equipped)
     from game.skills.passives import PassiveRegistry
@@ -694,7 +719,12 @@ async def callback_set_race(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await act.save()
 
     race_name = _race_display(player)
-    await safe_edit(query, t(lang, "race_set", race=race_name),
+    if not player.onboarding_done:
+        from game.classes import class_selector_text
+        text = t(lang, "race_set", race=race_name) + "\n\n" + class_selector_text(lang)
+    else:
+        text = t(lang, "race_set", race=race_name)
+    await safe_edit(query, text,
                     parse_mode="HTML",
                     reply_markup=class_keyboard(lang) if not player.onboarding_done else main_menu_keyboard(lang))
 
@@ -721,7 +751,9 @@ async def callback_set_class(update: Update, context: ContextTypes.DEFAULT_TYPE)
     player.job = class_name
     await player.update(_columns=["job"])
     if not player.onboarding_done:
-        await safe_edit(query, t(lang, "class_set", class_name=class_display(class_name, lang)),
+        from game.alignments import alignment_selector_text
+        text = t(lang, "class_set", class_name=class_display(class_name, lang)) + "\n\n" + alignment_selector_text(lang)
+        await safe_edit(query, text,
                         parse_mode="HTML", reply_markup=onboarding_align_keyboard(lang))
     else:
         await safe_edit(query, t(lang, "class_changed", class_name=class_display(class_name, lang)),
@@ -797,7 +829,7 @@ async def callback_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if not player:
             await safe_edit(query, t(lang, "not_registered"))
             return
-        keyboard = InlineKeyboardMarkup([
+        rows = [
             [
                 InlineKeyboardButton(t(lang, "refresh"),  callback_data="menu_profile"),
                 InlineKeyboardButton(t(lang, "btn_quest"), callback_data="menu_quest"),
@@ -806,11 +838,11 @@ async def callback_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 InlineKeyboardButton("🏪 Магазин" if lang != "en" else "🏪 Shop", callback_data="menu_shop"),
                 InlineKeyboardButton("🎯 Навыки" if lang != "en" else "🎯 Skills", callback_data="menu_passives"),
             ],
-            [
-                InlineKeyboardButton(t(lang, "btn_character"), callback_data="char_hub"),
-            ],
-            [InlineKeyboardButton(t(lang, "menu"), callback_data="menu_back")],
-        ])
+        ]
+        rows.append([InlineKeyboardButton("⭐ Престиж" if lang != "en" else "⭐ Prestige", callback_data="prestige_manage")])
+        rows.append([InlineKeyboardButton(t(lang, "btn_character"), callback_data="char_hub")])
+        rows.append([InlineKeyboardButton(t(lang, "menu"), callback_data="menu_back")])
+        keyboard = InlineKeyboardMarkup(rows)
         player = await Player.objects.get(uid=player.uid)
         await safe_edit(query, await _profile_text_async(player), parse_mode="HTML",
                         reply_markup=keyboard)
@@ -1039,7 +1071,7 @@ async def callback_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if not player:
             await safe_edit(query, t(lang, "not_registered"))
             return
-        await safe_edit(query, t(lang, "choose_race"),
+        await safe_edit(query, _race_choose_text(lang),
                         parse_mode="HTML", reply_markup=race_keyboard(lang))
 
     elif action == "char_hub":
@@ -1077,7 +1109,8 @@ async def callback_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     [InlineKeyboardButton(t(lang, "back"), callback_data="char_hub")],
                 ]
             )
-        text = t(lang, "char_class_title", job=job_name, level_info=level_info)
+        from game.classes import class_selector_text
+        text = t(lang, "char_class_title", job=job_name, level_info=level_info) + "\n\n" + class_selector_text(lang)
         await safe_edit(query, text, parse_mode="HTML", reply_markup=kb)
 
     elif action == "char_race":
@@ -1086,7 +1119,12 @@ async def callback_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
             return
         player = await Player.objects.get(uid=player.uid)
         race_name = _race_display(player)
-        text = t(lang, "char_race_title", race=race_name)
+        from game.races import race_selector_text
+        text = t(lang, "char_race_title", race=race_name) + "\n\n" + race_selector_text(lang)
+        if lang == "en":
+            text += f"\n\n🔄 Change race: {cfg.RACE_CHANGE_COST} 🎫 tokens"
+        else:
+            text += f"\n\n🔄 Смена расы: {cfg.RACE_CHANGE_COST} 🎫 токенов"
         kb_rows = [
             [
                 InlineKeyboardButton("👤 Человек" if lang != "en" else "👤 Human", callback_data="set_race_human"),
@@ -1104,7 +1142,8 @@ async def callback_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
             return
         player = await Player.objects.get(uid=player.uid)
         align_name = _align_str(player)
-        text = t(lang, "char_align_title", align=align_name)
+        from game.alignments import alignment_selector_text
+        text = t(lang, "char_align_title", align=align_name) + "\n\n" + alignment_selector_text(lang)
         kb_rows = [
             [
                 InlineKeyboardButton(t(lang, "align_good"),    callback_data="align_1"),
@@ -1432,6 +1471,108 @@ async def cmd_stats(update: Update, context: ContextTypes.DEFAULT_TYPE):
                                     reply_markup=stats_keyboard)
 
 
+async def callback_prestige(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Обработчик меню престижа из профиля."""
+    query = update.callback_query
+    await query.answer()
+    
+    user = query.from_user
+    player = await Player.objects.get_or_none(uid=user.id)
+    lang = (player.lang or "ru") if player else "ru"
+    if not player:
+        await safe_edit(query, t(lang, "not_registered"))
+        return
+    
+    data = query.data
+    
+    # === Показать экран управления престижем ===
+    if data == "prestige_manage":
+        per_level, max_bonus = get_prestige_bonus()
+        xp_level    = player.prestige_xp_level or 0
+        gold_level  = player.prestige_gold_level or 0
+        allocated   = xp_level + gold_level
+        unallocated = max(0, player.prestige_count - allocated)
+        xp_percent  = min(xp_level * per_level, max_bonus)
+        gold_percent = min(gold_level * per_level, max_bonus)
+        
+        lines = [
+            f"🔄 <b>{'Prestige bonuses' if lang == 'en' else 'Бонусы престижа'}</b>\n",
+            f"⭐ {'Всего:' if lang != 'en' else 'Total:'} <b>x{player.prestige_count}</b>\n",
+            f"⚡ XP: Lv.<b>{xp_level}</b> (+{xp_percent}%)\n",
+            f"💰 Gold: Lv.<b>{gold_level}</b> (+{gold_percent}%)\n",
+        ]
+        
+        rows = []
+        if unallocated > 0:
+            lines.append(f"\n{'Доступно:' if lang != 'en' else 'Available:'} <b>{unallocated}</b>\n{'Выбери бонус:' if lang != 'en' else 'Choose a bonus:'}")
+            rows = [
+                [InlineKeyboardButton(f"⚡ XP +{per_level}%", callback_data="prestige_bonus_xp"),
+                 InlineKeyboardButton(f"💰 Gold +{per_level}%", callback_data="prestige_bonus_gold")],
+            ]
+        else:
+            lines.append(f"\n{'Все очки распределены' if lang != 'en' else 'All points allocated'}")
+        
+        rows.append([InlineKeyboardButton(
+            "✨ Купить престиж (5🪙)" if lang != "en" else "✨ Buy prestige (5🪙)",
+            callback_data="prestige_buy")])
+        rows.append([InlineKeyboardButton(t(lang, "btn_profile"), callback_data="menu_profile")])
+        
+        await safe_edit(query, "".join(lines), parse_mode="HTML", reply_markup=InlineKeyboardMarkup(rows))
+        return
+    
+    # === Назначить очко в XP ===
+    if data == "prestige_bonus_xp":
+        allocated = (player.prestige_xp_level or 0) + (player.prestige_gold_level or 0)
+        if allocated >= player.prestige_count:
+            await query.answer(f"{'No points available' if lang == 'en' else 'Нет доступных очков'}", show_alert=True)
+            return
+        player.prestige_xp_level = (player.prestige_xp_level or 0) + 1
+        await player.update(_columns=["prestige_xp_level"])
+        per_level, max_bonus = get_prestige_bonus()
+        bonus = min(player.prestige_xp_level * per_level, max_bonus)
+        text = (
+            f"{'✅ XP bonus increased!' if lang == 'en' else '✅ XP бонус повышен!'}\n\n"
+            f"⚡ XP: Lv.<b>{player.prestige_xp_level}</b> (+{bonus}%)\n"
+            f"💰 Gold: Lv.<b>{player.prestige_gold_level or 0}</b> (+{min((player.prestige_gold_level or 0) * per_level, max_bonus)}%)\n"
+            f"Prestige: <b>x{player.prestige_count}</b>"
+        )
+        keyboard = InlineKeyboardMarkup([[InlineKeyboardButton("⭐ Престиж" if lang != "en" else "⭐ Prestige", callback_data="prestige_manage")]])
+        await safe_edit(query, text, parse_mode="HTML", reply_markup=keyboard)
+        return
+    
+    # === Назначить очко в Gold ===
+    if data == "prestige_bonus_gold":
+        allocated = (player.prestige_xp_level or 0) + (player.prestige_gold_level or 0)
+        if allocated >= player.prestige_count:
+            await query.answer(f"{'No points available' if lang == 'en' else 'Нет доступных очков'}", show_alert=True)
+            return
+        player.prestige_gold_level = (player.prestige_gold_level or 0) + 1
+        await player.update(_columns=["prestige_gold_level"])
+        per_level, max_bonus = get_prestige_bonus()
+        bonus = min(player.prestige_gold_level * per_level, max_bonus)
+        text = (
+            f"{'✅ Gold bonus increased!' if lang == 'en' else '✅ Gold бонус повышен!'}\n\n"
+            f"⚡ XP: Lv.<b>{player.prestige_xp_level or 0}</b> (+{min((player.prestige_xp_level or 0) * per_level, max_bonus)}%)\n"
+            f"💰 Gold: Lv.<b>{player.prestige_gold_level}</b> (+{bonus}%)\n"
+            f"Prestige: <b>x{player.prestige_count}</b>"
+        )
+        keyboard = InlineKeyboardMarkup([[InlineKeyboardButton("⭐ Престиж" if lang != "en" else "⭐ Prestige", callback_data="prestige_manage")]])
+        await safe_edit(query, text, parse_mode="HTML", reply_markup=keyboard)
+        return
+    
+    # === Купить престиж ===
+    if data == "prestige_buy":
+        price = 5
+        if player.tokens < price:
+            await query.answer(f"{'Not enough tokens' if lang == 'en' else 'Не хватает токенов'}", show_alert=True)
+            return
+        player.tokens -= price
+        await player.update(_columns=["tokens"])
+        text, keyboard = await buy_prestige(player, lang)
+        await safe_edit(query, text, parse_mode="HTML", reply_markup=keyboard)
+        return
+
+
 def register(app: Application):
     app.add_handler(CommandHandler("start",   cmd_start))
     app.add_handler(CommandHandler("profile", cmd_profile))
@@ -1447,4 +1588,5 @@ def register(app: Application):
     app.add_handler(CallbackQueryHandler(callback_menu,     pattern="^char_"))
     app.add_handler(CallbackQueryHandler(callback_menu,     pattern="^autoquest_set_"))
     app.add_handler(CallbackQueryHandler(callback_menu,     pattern="^shop_chests$|^shop_boosts$|^shop_tokens$"))
+    app.add_handler(CallbackQueryHandler(callback_prestige, pattern="^prestige_"))
     app.add_handler(CallbackQueryHandler(callback_pull,     pattern="^pull_\\d+$"))

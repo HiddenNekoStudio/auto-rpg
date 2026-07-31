@@ -30,8 +30,10 @@ async def cmd_setjob(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None
 
     if not context.args:
         from handlers.user import class_keyboard
+        from game.classes import class_selector_text
         await update.message.reply_text(
-            t(lang, "choose_class"), parse_mode="HTML",
+            t(lang, "choose_class") + "\n\n" + class_selector_text(lang),
+            parse_mode="HTML",
             reply_markup=class_keyboard(lang))
         return
 

@@ -43,7 +43,7 @@ load_env_file()
 # Название игры
 GAME_NAME = "AutoRPG"
 # Версия
-VERSION = "2.0.1"
+VERSION = "2.0.5"
 # Описание игры (показывается по /info)
 GAME_INFO = f"🎮 AutoRPG (v{VERSION}) — Idle RPG для Telegram"
 # Токен Telegram бота (получить у @BotFather)
@@ -221,10 +221,13 @@ KINGDOM_BONUSES = {
 
 # Расы и их бонусы
 RACES = {
-    "human": {"ru": "👤 Человек", "en": "👤 Human",   "bonus": "🍀 20% шанс избежать штрафа монстра / 20% chance to avoid monster penalty"},
-    "dwarf": {"ru": "⛏️ Гном",    "en": "⛏️ Dwarf",   "bonus": "⚔️ +15% DPS, 🛡️ +15% к защите / +15% DPS, +15% defense"},
-    "elf":   {"ru": "🌿 Эльф",    "en": "🌿 Elf",     "bonus": "🏹 +10% к скорости прокачки / +10% XP speed"},
+    "human": {"ru": "👤 Человек", "en": "👤 Human",   "bonus": "🍀 20% избежать штрафа монстра · 💰 +15% золота / 20% avoid monster penalty · +15% gold"},
+    "dwarf": {"ru": "⛏️ Гном",    "en": "⛏️ Dwarf",   "bonus": "🛡️ +20% защиты · ❤️ +10% макс. HP / +20% defense · +10% max HP"},
+    "elf":   {"ru": "🌿 Эльф",    "en": "🌿 Elf",     "bonus": "🏹 +10% к опыту · 🎯 +10% шанс крита / +10% XP · +10% crit chance"},
 }
+
+# Стоимость смены расы (в токенах). Первый выбор при онбординге — бесплатный.
+RACE_CHANGE_COST = 5
 
 # Расовые навыки (выдаются при выборе расы)
 RACIAL_PASSIVES = {

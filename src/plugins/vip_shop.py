@@ -13,6 +13,8 @@ from telegram.ext import Application, CallbackQueryHandler, ContextTypes
 from db import Player
 from ui.icons import SEP
 from core.telegram_utils import safe_edit
+import config as cfg
+from core.loot import generate_item_data
 
 logger = logging.getLogger(__name__)
 
@@ -76,6 +78,51 @@ def get_prestige_bonus() -> tuple:
     return per_level, max_bonus
 
 
+async def buy_prestige(player: Player, lang: str) -> tuple[str, InlineKeyboardMarkup]:
+    """Купить престиж: сброс уровня, обнуление, генерация стартового шмота.
+    Возвращает (текст, клавиатура) для показа игроку."""
+    from ui.icons import SEP
+    
+    old_level = player.level
+    
+    player.level = 1
+    player.currentxp = 0
+    player.nextxp = 600
+    player.gold = 0
+    
+    for slot in cfg.WEAPON_SLOTS:
+        setattr(player, slot, generate_item_data(slot, 1))
+    
+    player.prestige_count += 1
+    player.sync_max_hp_mp()
+    await player.update(_columns=[
+        "level", "currentxp", "nextxp", "gold",
+        *cfg.WEAPON_SLOTS,
+        "prestige_count", "max_hp", "max_mp"
+    ])
+    
+    per_level, max_bonus = get_prestige_bonus()
+    
+    xp_level    = player.prestige_xp_level or 0
+    gold_level  = player.prestige_gold_level or 0
+    xp_percent  = min(xp_level * per_level, max_bonus)
+    gold_percent = min(gold_level * per_level, max_bonus)
+    
+    text = (
+        f"✨ <b>PRESTIGE!</b>\n\n"
+        f"{player.name} {'starts anew!' if lang == 'en' else 'начинает заново!'}\n\n"
+        f"{'Old level:' if lang == 'en' else 'Старый уровень:'} <b>{old_level}</b>\n"
+        f"{'Total prestige:' if lang == 'en' else 'Всего prestige:'} <b>x{player.prestige_count}</b>\n"
+        f"Prestige level: <b>{player.prestige_count}</b>\n\n"
+        f"⚡ XP: Lv.<b>{xp_level}</b> (+{xp_percent}%)\n"
+        f"💰 Gold: Lv.<b>{gold_level}</b> (+{gold_percent}%)\n\n"
+        f"{'Choose a bonus:' if lang == 'en' else 'Выбери бонус:'}"
+    )
+    
+    keyboard = build_prestige_choose_keyboard(lang, player)
+    return text, keyboard
+
+
 def vip_t(lang: str, key: str, **kwargs) -> str:
     """Получить перевод для VIP магазина."""
     from i18n import t
@@ -129,16 +176,13 @@ def build_vip_keyboard(lang: str, player: Player = None) -> InlineKeyboardMarkup
         else:
             rows.append([buttons[i]])
 
-    if player and player.prestige_count > 0:
-        rows.append([InlineKeyboardButton("⭐ Prestige" if lang == "en" else "⭐ Престиж", callback_data="vip_prestige_change")])
-
     rows.append([InlineKeyboardButton(vip_t(lang, "menu"), callback_data="menu_back")])
 
     return InlineKeyboardMarkup(rows)
 
 
 def build_prestige_choose_keyboard(lang: str, player: Player) -> InlineKeyboardMarkup:
-    """Построить клавиатуру выбора бонуса prestige."""
+    """Построить клавиатуру выбора бонуса prestige (после покупки)."""
     per_level, max_bonus = get_prestige_bonus()
     
     xp_level = player.prestige_xp_level or 0
@@ -151,34 +195,11 @@ def build_prestige_choose_keyboard(lang: str, player: Player) -> InlineKeyboardM
     gold_text = f"💰 Gold +{gold_percent}% (Lv.{gold_level})"
     
     rows = [[
-        InlineKeyboardButton(xp_text, callback_data="vip_bonus_xp"),
-        InlineKeyboardButton(gold_text, callback_data="vip_bonus_gold"),
+        InlineKeyboardButton(xp_text, callback_data="prestige_bonus_xp"),
+        InlineKeyboardButton(gold_text, callback_data="prestige_bonus_gold"),
     ]]
     
-    rows.append([InlineKeyboardButton("🔙 Menu" if lang == "en" else "🔙 Меню", callback_data="menu_back")])
-    
-    return InlineKeyboardMarkup(rows)
-
-
-def build_prestige_change_keyboard(lang: str, player: Player) -> InlineKeyboardMarkup:
-    """Построить клавиатуру смены бонуса prestige."""
-    per_level, max_bonus = get_prestige_bonus()
-    
-    xp_level = player.prestige_xp_level or 0
-    gold_level = player.prestige_gold_level or 0
-    
-    xp_percent = min(xp_level * per_level, max_bonus)
-    gold_percent = min(gold_level * per_level, max_bonus)
-    
-    xp_text = f"⚡ XP +{xp_percent}% (Lv.{xp_level})"
-    gold_text = f"💰 Gold +{gold_percent}% (Lv.{gold_level})"
-    
-    rows = [[
-        InlineKeyboardButton(xp_text, callback_data="vip_bonus_xp"),
-        InlineKeyboardButton(gold_text, callback_data="vip_bonus_gold"),
-    ]]
-    
-    rows.append([InlineKeyboardButton(vip_t(lang, "menu"), callback_data="menu_back")])
+    rows.append([InlineKeyboardButton("⭐ Престиж" if lang != "en" else "⭐ Prestige", callback_data="prestige_manage")])
     
     return InlineKeyboardMarkup(rows)
 
@@ -283,61 +304,9 @@ async def handle_vip_callback(update: Update, context: ContextTypes.DEFAULT_TYPE
 
         # === PRESTIGE ===
         elif item_type == "prestige":
-            try:
-                old_level = player.level
-                
-                player.level = 1
-                player.currentxp = 0
-                player.nextxp = 600
-                player.gold = 0
-                
-                from core.loot import generate_item_data
-                
-                new_level = 1
-                for slot in ['weapon', 'shield', 'helmet', 'chest', 'gloves', 'boots', 'ring', 'amulet']:
-                    item = generate_item_data(slot, new_level)
-                    setattr(player, slot, item)
-                
-                player.prestige_count += 1
-                
-                if player.prestige_level is None or player.prestige_level == 0:
-                    player.prestige_level = 1
-                else:
-                    player.prestige_level += 1
-                
-                player.sync_max_hp_mp()
-                await player.update(_columns=[
-                    "level", "currentxp", "nextxp", "gold",
-                    "weapon", "shield", "helmet", "chest", "gloves", "boots", "ring", "amulet",
-                    "prestige_count", "prestige_level", "max_hp", "max_mp"
-                ])
-                
-                per_level, max_bonus = get_prestige_bonus()
-                
-                xp_level = player.prestige_xp_level or 0
-                gold_level = player.prestige_gold_level or 0
-                xp_percent = min(xp_level * per_level, max_bonus)
-                gold_percent = min(gold_level * per_level, max_bonus)
-                
-                text = (
-                    f"✨ <b>PRESTIGE!</b>\n\n"
-                    f"{player.name} {'starts anew!' if lang == 'en' else 'начинает заново!'}\n\n"
-                    f"{'Old level:' if lang == 'en' else 'Старый уровень:'} <b>{old_level}</b>\n"
-                    f"{'Total prestige:' if lang == 'en' else 'Всего prestige:'} <b>x{player.prestige_count}</b>\n"
-                    f"Prestige level: <b>{player.prestige_level}</b>\n\n"
-                    f"⚡ XP: Lv.<b>{xp_level}</b> (+{xp_percent}%)\n"
-                    f"💰 Gold: Lv.<b>{gold_level}</b> (+{gold_percent}%)\n\n"
-                    f"{'Choose a bonus:' if lang == 'en' else 'Выбери бонус:'}"
-                )
-                
-                keyboard = build_prestige_choose_keyboard(lang, player)
-                
-                await safe_edit(query, text, parse_mode="HTML", reply_markup=keyboard)
-                return
-            except Exception as e:
-                logging.error(f"PRESTIGE error: {e}")
-                await query.answer(f"{'An error occurred. Try again later.' if lang == 'en' else 'Произошла ошибка. Попробуйте позже.'}", show_alert=True)
-                return
+            text, keyboard = await buy_prestige(player, lang)
+            await safe_edit(query, text, parse_mode="HTML", reply_markup=keyboard)
+            return
 
         # Кнопки после покупки
         keyboard = InlineKeyboardMarkup([
@@ -352,77 +321,6 @@ async def handle_vip_callback(update: Update, context: ContextTypes.DEFAULT_TYPE
             ],
         ])
 
-        await safe_edit(query, text, parse_mode="HTML", reply_markup=keyboard)
-        return
-
-    # === ВЫБОР БОНУСА PRESTIGЕ ===
-    if data == "vip_bonus_xp":
-        allocated = (player.prestige_xp_level or 0) + (player.prestige_gold_level or 0)
-        if allocated >= player.prestige_count:
-            await query.answer(f"{'No points available' if lang == 'en' else 'Нет доступных очков'}", show_alert=True)
-            return
-        player.prestige_xp_level = (player.prestige_xp_level or 0) + 1
-        await player.update(_columns=["prestige_xp_level"])
-        per_level, max_bonus = get_prestige_bonus()
-        bonus_percent = min(player.prestige_xp_level * per_level, max_bonus)
-        text = (
-            f"{'✅ XP bonus increased!' if lang == 'en' else '✅ XP бонус повышен!'}\n\n"
-            f"⚡ XP: Lv.<b>{player.prestige_xp_level}</b> (+{bonus_percent}%)\n"
-            f"💰 Gold: Lv.<b>{player.prestige_gold_level or 0}</b> (+{min((player.prestige_gold_level or 0) * per_level, max_bonus)}%)\n"
-            f"Prestige: <b>x{player.prestige_count}</b>"
-        )
-        keyboard = InlineKeyboardMarkup([[InlineKeyboardButton(vip_t(lang, "menu"), callback_data="menu_back")]])
-        await safe_edit(query, text, parse_mode="HTML", reply_markup=keyboard)
-        return
-
-    if data == "vip_bonus_gold":
-        allocated = (player.prestige_xp_level or 0) + (player.prestige_gold_level or 0)
-        if allocated >= player.prestige_count:
-            await query.answer(f"{'No points available' if lang == 'en' else 'Нет доступных очков'}", show_alert=True)
-            return
-        player.prestige_gold_level = (player.prestige_gold_level or 0) + 1
-        await player.update(_columns=["prestige_gold_level"])
-        per_level, max_bonus = get_prestige_bonus()
-        bonus_percent = min(player.prestige_gold_level * per_level, max_bonus)
-        text = (
-            f"{'✅ Gold bonus increased!' if lang == 'en' else '✅ Gold бонус повышен!'}\n\n"
-            f"⚡ XP: Lv.<b>{player.prestige_xp_level or 0}</b> (+{min((player.prestige_xp_level or 0) * per_level, max_bonus)}%)\n"
-            f"💰 Gold: Lv.<b>{player.prestige_gold_level}</b> (+{bonus_percent}%)\n"
-            f"Prestige: <b>x{player.prestige_count}</b>"
-        )
-        keyboard = InlineKeyboardMarkup([[InlineKeyboardButton(vip_t(lang, "menu"), callback_data="menu_back")]])
-        await safe_edit(query, text, parse_mode="HTML", reply_markup=keyboard)
-        return
-
-    # === CHANGE PRESTIGE BONUS ===
-    if data == "vip_prestige_change":
-        per_level, max_bonus = get_prestige_bonus()
-        xp_level = player.prestige_xp_level or 0
-        gold_level = player.prestige_gold_level or 0
-        allocated = xp_level + gold_level
-        unallocated = max(0, player.prestige_count - allocated)
-        xp_percent = min(xp_level * per_level, max_bonus)
-        gold_percent = min(gold_level * per_level, max_bonus)
-
-        if unallocated <= 0:
-            text = (
-                f"🔄 {'Prestige bonuses' if lang == 'en' else 'Бонусы престижа'}\n\n"
-                f"⚡ XP: Lv.<b>{xp_level}</b> (+{xp_percent}%)\n"
-                f"💰 Gold: Lv.<b>{gold_level}</b> (+{gold_percent}%)\n\n"
-                f"{'All points allocated' if lang == 'en' else 'Все очки распределены'}"
-            )
-            keyboard = InlineKeyboardMarkup([[InlineKeyboardButton(vip_t(lang, "menu"), callback_data="menu_back")]])
-            await safe_edit(query, text, parse_mode="HTML", reply_markup=keyboard)
-            return
-
-        text = (
-            f"🔄 {'Prestige bonuses' if lang == 'en' else 'Бонусы престижа'}\n\n"
-            f"⚡ XP: Lv.<b>{xp_level}</b> (+{xp_percent}%)\n"
-            f"💰 Gold: Lv.<b>{gold_level}</b> (+{gold_percent}%)\n\n"
-            f"{'Available:' if lang == 'en' else 'Доступно:'} <b>{unallocated}</b>\n\n"
-            f"{'Choose a bonus:' if lang == 'en' else 'Выбери бонус:'}"
-        )
-        keyboard = build_prestige_change_keyboard(lang, player)
         await safe_edit(query, text, parse_mode="HTML", reply_markup=keyboard)
         return
 
@@ -532,4 +430,7 @@ __all__ = [
     "get_prestige_gold_multiplier",
     "has_prestige_xp_bonus",
     "has_prestige_gold_bonus",
+    "buy_prestige",
+    "get_prestige_bonus",
+    "build_prestige_choose_keyboard",
 ]

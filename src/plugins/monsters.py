@@ -688,6 +688,10 @@ class MonsterEncountersPlugin(GamePlugin):
             if archer_crit:
                 p_dmg = int(p_dmg * 2.0)
                 r["crit"] = True
+            from game.races import get_race_crit_chance
+            if random.random() < get_race_crit_chance(player.race):
+                p_dmg = int(p_dmg * 2.0)
+                r["crit"] = True
             if damage_dealt_res.damage_bonus:
                 p_dmg = int(p_dmg * (1.0 + damage_dealt_res.damage_bonus))
             if damage_dealt_res.message:
@@ -903,6 +907,8 @@ class MonsterEncountersPlugin(GamePlugin):
             player.nextxp = max(player.currentxp + 1, player.nextxp - effective_val)
 
             gold_reward = int(((monster_level * 5) + random.randint(0, player.level * 2)) * vgold_mult)
+            from game.races import get_race_gold_mult
+            gold_reward = int(gold_reward * get_race_gold_mult(player.race))
             gold_reward = int(gold_reward * region_mult)
             base_xp_reward = effective_val
 
