@@ -15,3 +15,6 @@ tests/
 *.egg-info
 venv/
 .venv/
+.kilo/
+.graphify-out/
+src/graphify-out/

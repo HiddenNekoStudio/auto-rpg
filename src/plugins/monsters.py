@@ -1189,8 +1189,11 @@ class MonsterEncountersPlugin(GamePlugin):
         await player.update(_columns=update_cols)
 
         if player_won:
-            from game.quests import on_win_streak
-            await on_win_streak(player, player.fight_streak or 0)
+            try:
+                from game.quests import on_win_streak
+                await on_win_streak(player, player.fight_streak or 0)
+            except Exception as e:
+                logger.error(f"Win streak progress error: {e}")
 
             try:
                 from game.quests import on_monster_defeated

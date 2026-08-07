@@ -361,7 +361,11 @@ async def encounter_one(bot: Bot, player: Player, monster: str, monster_level: i
 
     from game.quests import on_win_streak, on_death
     if player_won:
-        await on_win_streak(player, _win_streak.get(player.uid, 1))
+        try:
+            await on_win_streak(player, _win_streak.get(player.uid, 1))
+        except Exception:
+            import logging
+            logging.exception("win streak hook error")
         # NEW QUEST SYSTEM
         try:
             from game.quests import on_monster_defeated

@@ -39,7 +39,7 @@ def _current_value(player, atype: str) -> int:
     if atype == "win_streak":
         return player.fight_streak or 0
     if atype == "gold_earned":
-        return player.gold or 0
+        return max(_progress(player).get("gold_earned", 0), player.gold or 0)
     return _progress(player).get(atype, 0)
 
 
@@ -83,6 +83,13 @@ async def check_achievements(player, atype: str, current: int | None = None):
                 f"🏆 {conf.get('icon', '')} {name}" + (f" +{reward}🪙" if reward else ""),
                 [player.uid],
             )
+
+
+async def check_all_achievements(player):
+    """Ретроспективная проверка всех типов достижений по текущему прогрессу."""
+    for atype in {conf.get("type") for conf in _load_achievements().values()}:
+        if atype:
+            await check_achievements(player, atype)
 
 
 async def on_monster_defeated(player):

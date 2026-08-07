@@ -10,6 +10,7 @@ from i18n import t
 
 
 async def build_achievements_text(player, lang: str):
+    await ach_api.check_all_achievements(player)
     confs = ach_api.all_achievements()
     unlocked = {
         a.achievement_id for a in await PlayerAchievement.objects.filter(

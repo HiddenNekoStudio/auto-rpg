@@ -445,8 +445,9 @@ async def _profile_text_async(player) -> str:
     # ── Achievements ──
     try:
         from db import PlayerAchievement
+        from game.achievements import all_achievements, check_all_achievements
+        await check_all_achievements(player)
         ach_count = await PlayerAchievement.objects.filter(player_uid=player.uid).count()
-        from game.achievements import all_achievements
         lines.append(f"🏆 {'Достижения' if lang != 'en' else 'Achievements'}: {ach_count}/{len(all_achievements())}")
     except Exception:
         pass
