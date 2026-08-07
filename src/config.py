@@ -43,9 +43,9 @@ load_env_file()
 # Название игры
 GAME_NAME = "AutoRPG"
 # Версия
-VERSION = "2.0.5"
+VERSION = "2.1.0-beta1"
 # Описание игры (показывается по /info)
-GAME_INFO = f"🎮 AutoRPG (v{VERSION}) — Idle RPG для Telegram"
+GAME_INFO = f"🎮 AutoRPG (v{VERSION}) — Idle RPG Telegram"
 # Токен Telegram бота (получить у @BotFather)
 TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN")
 # SOCKS5 прокси для Telegram (формат: socks5://user:pass@host:port)
@@ -76,6 +76,8 @@ IDLE_XP_RATE_EXTENDED = 0.05  # 5%
 # Тип: sqlite+aiosqlite, mysql+aiomysql, postgresql+asyncpg
 DBTYPE = os.getenv("DBTYPE", "postgresql+asyncpg")
 DBNAME = os.getenv("DBNAME", "autorpg")
+# Путь к файлу SQLite (только для DBTYPE=sqlite+aiosqlite)
+DB_PATH = os.getenv("DB_PATH", "data/autorpg.db")
 DBUSER = os.getenv("DBUSER", "autorpg")
 DBPASS = os.getenv("DBPASS", "autorpg_pass")
 DBHOST = os.getenv("DBHOST", "localhost")
@@ -191,6 +193,64 @@ PARTY_CHANCE = 0.03
 STAMINA_MAX = 2
 # Интервал снятия 1 очка стамины (сек)
 STREAK_DECAY_INTERVAL = 300
+
+# Комбо-стрик: +% DPS за каждую победу серии (до порога STAMINA_MAX, дальше — усталость)
+COMBO_STREAK_BONUS_PER_WIN = 0.01   # +1% DPS за победу в серии
+COMBO_STREAK_MAX_MULT = 0.25        # потолок бонуса (25%)
+
+# Вампиризм монстров: % урона, возвращаемый монстру как HP (по id монстра)
+MONSTER_LIFESTEAL = {
+    "vampire": 0.15,
+    "wraith": 0.10,
+    "demon": 0.08,
+}
+# Шанс «кровожадного» монстра в охоте по режимам
+HUNTING_LIFESTEAL_CHANCE = {"weak": 0.05, "strong": 0.10, "epic": 0.15}
+
+# ── Элементы (урон ×1.5 по слабости) ────────────────
+# Элемент монстра определяется по его типу из data/monsters.json
+MONSTER_TYPE_ELEMENT = {
+    "animal": "nature", "humanoid": "nature", "ooze": "nature",
+    "undead": "dark", "demon": "fire", "dragon": "fire",
+    "elemental": "lightning", "mythical": "lightning",
+    "giant": "earth", "construct": "earth",
+}
+# Слабости: элемент оружия → типы монстров, по которым бьёт ×1.5
+ELEMENT_WEAKNESS = {
+    "fire": ["animal", "undead", "ooze"],
+    "ice": ["dragon", "demon", "elemental"],
+    "lightning": ["construct", "giant", "mythical"],
+    "nature": ["giant", "construct", "earth"],
+    "dark": ["humanoid", "mythical", "nature"],
+    "holy": ["undead", "demon", "dark"],
+}
+ELEMENT_WEAK_MULT = 1.5      # множитель урона по слабости
+ELEMENT_AFFIX_CHANCE = 0.30  # шанс оружия получить элемент при генерации лута
+SET_AFFIX_CHANCE = 0.12      # шанс предмета получить сетовый аффикс при генерации
+
+# =============================================
+#   ДРАГОЦЕННЫЕ КАМНИ (гнёзда в экипировке)
+# =============================================
+GEM_SOCKET_CHANCE = 0.25        # шанс предмета иметь хотя бы одно гнездо
+GEM_MAX_SOCKETS = 2             # макс. гнёзд на предмете
+GEM_DROP_CHANCE = 0.08          # шанс дропа камня с редкого лута/босса
+ELEMENT_NAMES_RU = {"fire": "Огненный", "ice": "Ледяной", "lightning": "Грозовой",
+                    "nature": "Природный", "dark": "Тёмный", "holy": "Святой"}
+ELEMENT_NAMES_EN = {"fire": "Fiery", "ice": "Icy", "lightning": "Storm",
+                    "nature": "Nature", "dark": "Dark", "holy": "Holy"}
+
+# ── DoT-статусы (burn/freeze/stun) ──────────────────
+DOT_BURN_CHANCE = 0.25      # шанс огненного удара поджечь монстра
+DOT_BURN_TICKS = 2          # тиков горения
+DOT_BURN_DMG_PCT = 0.08     # урон горения = 8% от урона игрока за тик
+FREEZE_SKIP_CHANCE = 0.25   # шанс ледяного удара пропустить ход монстра
+
+# ── Фьюри-ульт (шкала ярости) ────────────────────────
+# Ярость накапливается в бою, при 100% следующий удар — ульт ×FURY_ULT_MULT
+FURY_GAIN_ON_HIT = 8       # ярость за нанесённый удар
+FURY_GAIN_ON_TAKEN = 5     # ярость за полученный удар
+FURY_ULT_MULT = 2.5        # множитель урона ульта
+FURY_RESET_LOSS = 50       # % ярости, теряемый при смерти
 
 # Интервал спавна одного монстра (сек, для разнесённого спавна)
 SPAWN_MIN_INTERVAL = 60     # мин 1 минута
@@ -400,3 +460,167 @@ ACTIVE_SKILL_LEVEL_UP_XP_BASE = 500
 STARS_SHOP_RATE = 50
 # Максимум токенов за одну покупку
 STARS_SHOP_MAX_PER_PURCHASE = 10
+
+# =============================================
+#   СИСТЕМА ОХОТЫ
+# =============================================
+# Интервал боя (секунды) по режимам
+HUNTING_INTERVAL = {
+    "weak": 120,      # каждые 2 мин
+    "strong": 240,    # каждые 4 мин
+    "epic": 300,      # каждые 5 мин
+}
+# Длительности охоты: {секунды: бонус завершения}
+HUNTING_DURATIONS = {
+    3600: 1.0,   # 1ч
+    7200: 1.5,   # 2ч
+    14400: 2.5,  # 4ч
+    18000: 3.0,  # 5ч
+}
+# Режимы охоты: уровни монстров, множители наград, риски
+HUNTING_MODES = {
+    "weak": {
+        "name_ru": "Слабый", "name_en": "Weak", "icon": "🟢",
+        "level_offset": (-2, 0),
+        "xp_mult": 0.5, "gold_mult": 0.5,
+        "loot_chance": 0.04,
+        "retreat_hp_pct": 0.30,     # отступление при HP < 30% (боя нет)
+        "survive_bonus": 1.0,
+        "death_gold_penalty": 0.0,
+        "death_item_chance": 0.0,
+    },
+    "strong": {
+        "name_ru": "Сильный", "name_en": "Strong", "icon": "🟡",
+        "level_offset": (0, 2),
+        "xp_mult": 1.0, "gold_mult": 1.0,
+        "loot_chance": 0.08,
+        "retreat_hp_pct": 0.0,
+        "survive_bonus": 1.5,
+        "death_gold_penalty": 0.10,
+        "death_item_chance": 0.0,
+    },
+    "epic": {
+        "name_ru": "Эпический", "name_en": "Epic", "icon": "🔴",
+        "level_offset": (2, 5),
+        "xp_mult": 2.0, "gold_mult": 2.0,
+        "loot_chance": 0.15,
+        "retreat_hp_pct": 0.0,
+        "survive_bonus": 3.0,
+        "death_gold_penalty": 0.20,
+        "death_item_chance": 0.30,
+    },
+}
+# Волны: каждые N убийств +1 уровень монстра (макс бонус)
+HUNTING_WAVE_KILLS = 5
+HUNTING_WAVE_MAX_BONUS = 3
+# Статы монстра масштабируются от DPS игрока (самобаланс под экипировку)
+HUNTING_MONSTER_HP_FACTOR = {"weak": 1.8, "strong": 2.6, "epic": 3.6}
+HUNTING_MONSTER_DPS_FACTOR = {"weak": 0.10, "strong": 0.18, "epic": 0.28}
+# Прирост статов монстра за волну
+HUNTING_WAVE_MULT = 0.15
+# Эпический мини-босс: шанс на финальном бое
+HUNTING_MINIBOSS_CHANCE = 0.5
+# Множители статов мини-босса
+HUNTING_MINIBOSS_HP_MULT = 2.5
+HUNTING_MINIBOSS_DPS_MULT = 1.5
+# Множитель наград мини-босса
+HUNTING_MINIBOSS_REWARD_MULT = 3.0
+# Раунд боя охоты = N секунд
+HUNTING_ROUND_SECONDS = 5
+# Максимум раундов в одном бою охоты (предохранитель)
+HUNTING_MAX_ROUNDS = 20
+
+# =============================================
+#   ЕЖЕДНЕВНЫЕ НАГРАДЫ
+# =============================================
+# Награды за ежедневный вход по дням 7-дневного цикла (токены)
+DAILY_REWARD_CYCLE = [1, 1, 2, 2, 3, 3, 5]
+# Оффлайн-бонус: часов оффлайна для бонусного токена
+OFFLINE_BONUS_HOURS = 6
+
+# Токены за выполнение ежедневного бонусного квеста (из /daily)
+DAILY_QUEST_TOKEN_REWARD = 2
+
+# =============================================
+#   БОССЫ — ОКНО УБИЙСТВА
+# =============================================
+# Часов после респауна, в течение которых босс должен быть убит
+BOSS_KILL_WINDOW_HOURS = 2
+
+# =============================================
+#   ПИТОМЦЫ
+# =============================================
+# Опыт питомца за игровой тик (экипированному) каждые PET_XP_INTERVAL секунд
+PET_XP_PER_TICK = 1
+PET_XP_INTERVAL = 300
+# Опыт за убийства (второй источник прокачки)
+PET_XP_PER_KILL = 1
+PET_XP_PER_BOSS = 3
+PET_MAX_LEVEL = 50
+PET_XP_THRESHOLD_BASE = 100  # порог до след. уровня = PET_XP_THRESHOLD_BASE * level
+PET_LEVEL_GROWTH = 0.10      # +10% к бонусам за каждый уровень сверх 1-го
+PET_EVOLVE_LEVEL = 30        # уровень для эволюции
+PET_EVOLVE_TOKENS = 25       # стоимость эволюции в токенах
+
+# =============================================
+#   КЛАНОВЫЕ БОССЫ
+# =============================================
+# Как часто проверяем спавн боссов кланам без активного (сек)
+CLAN_BOSS_SPAWN_INTERVAL = 6 * 3600
+# Время жизни босса до деспауна (сек)
+CLAN_BOSS_DURATION = 6 * 3600
+# Минимальный уровень клана для появления босса
+CLAN_BOSS_MIN_CLAN_LEVEL = 2
+# HP босса = CLAN_BOSS_HP_BASE + clan.level * CLAN_BOSS_HP_PER_LEVEL
+CLAN_BOSS_HP_BASE = 50000
+CLAN_BOSS_HP_PER_LEVEL = 50000
+# Вклад урона членом клана = DPS игрока * CLAN_BOSS_DPS_MULT каждые CLAN_BOSS_HIT_COOLDOWN сек
+CLAN_BOSS_DPS_MULT = 1.0
+CLAN_BOSS_HIT_COOLDOWN = 300
+# Награды за победу
+CLAN_BOSS_KILL_TOKENS = 5      # токенов каждому вкладчику
+CLAN_BOSS_KILL_GOLD_BASE = 500  # база золота вкладчику + доля от урона
+CLAN_BOSS_KILL_GOLD = 2000     # пул золота, делится пропорционально урону
+CLAN_BOSS_CLAN_XP = 500        # опыт клану за победу
+
+# =============================================
+#   МИРОВОЙ РЕЙД-БОСС
+# =============================================
+RAID_BOSS_SPAWN_INTERVAL = 8 * 3600   # переспавн после победы/деспауна
+RAID_BOSS_DURATION = 8 * 3600         # время жизни до деспауна
+# HP босса = RAID_BOSS_HP_BASE + level * RAID_BOSS_HP_PER_LEVEL
+RAID_BOSS_HP_BASE = 500000
+RAID_BOSS_HP_PER_LEVEL = 250000
+# Вклад игрока = DPS * RAID_BOSS_DPS_MULT каждые RAID_BOSS_HIT_COOLDOWN сек
+RAID_BOSS_DPS_MULT = 1.0
+RAID_BOSS_HIT_COOLDOWN = 120
+# Награды за победу (всем вкладчикам)
+RAID_BOSS_KILL_TOKENS = 10
+RAID_BOSS_KILL_GOLD_BASE = 2000
+RAID_BOSS_KILL_GOLD = 10000
+
+# =============================================
+#   ПОДЗЕМЕЛЬЯ
+# =============================================
+# Как часто бой за комнату (сек)
+DUNGEON_INTERVAL = 300
+# Монстр комнаты генерируется движком охоты (режим strong) и масштабируется:
+# hp = hp * (1 + (floor-1) * DUNGEON_ROOM_GROWTH) * dungeon.hp_mult
+DUNGEON_ROOM_GROWTH = 0.25
+# Токены за полное прохождение
+DUNGEON_TOKEN_REWARD = 5
+
+# =============================================
+#   АРЕНА ВОЛН
+# =============================================
+# Как часто бой за волну (сек)
+ARENA_INTERVAL = 240
+# Минимальный уровень для входа на арену
+ARENA_MIN_LEVEL = 3
+# Рост статов монстра за волну (как у подземелий)
+ARENA_WAVE_GROWTH = 0.12
+# Каждая N-я волна — мини-босс
+ARENA_BOSS_EVERY = 5
+# Токены за каждую пройденную волну
+ARENA_TOKEN_PER_WAVE = 1
+

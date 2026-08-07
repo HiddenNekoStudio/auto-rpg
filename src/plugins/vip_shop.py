@@ -254,7 +254,7 @@ async def handle_vip_callback(update: Update, context: ContextTypes.DEFAULT_TYPE
         # === XP BOOST ===
         if item_type == "xp_boost":
             duration = item_data.get('duration', 3600)
-            player.xp_boost_until = int(time_module.time()) + duration
+            player.xp_boost_until = max(player.xp_boost_until or 0, int(time_module.time())) + duration
             await player.update(_columns=["xp_boost_until"])
             name_ru = player.name or ""
             name_en = player.name_en or name_ru
@@ -264,7 +264,7 @@ async def handle_vip_callback(update: Update, context: ContextTypes.DEFAULT_TYPE
         # === SPEED BOOST ===
         elif item_type == "speed_boost":
             duration = item_data.get('duration', 1800)
-            player.speed_boost_until = int(time_module.time()) + duration
+            player.speed_boost_until = max(player.speed_boost_until or 0, int(time_module.time())) + duration
             await player.update(_columns=["speed_boost_until"])
             name_ru = player.name or ""
             name_en = player.name_en or name_ru
@@ -274,7 +274,7 @@ async def handle_vip_callback(update: Update, context: ContextTypes.DEFAULT_TYPE
         # === PROTECT ===
         elif item_type == "protect":
             duration = item_data.get('duration', 3600)
-            player.protect_until = int(time_module.time()) + duration
+            player.protect_until = max(player.protect_until or 0, int(time_module.time())) + duration
             await player.update(_columns=["protect_until"])
             name_ru = player.name or ""
             name_en = player.name_en or name_ru

@@ -59,7 +59,7 @@ class TestDatabaseModels:
         ]
         
         # Проверяем, что класс существует и имеет нужные атрибуты
-        assert hasattr(Player, ' objects')
+        assert hasattr(Player, 'objects')
 
     def test_quest_model_fields(self):
         """Поля модели Quest"""

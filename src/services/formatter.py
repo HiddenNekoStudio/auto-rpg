@@ -121,6 +121,17 @@ def item_string(item: dict, lang: str = "ru") -> str:
     if item.get("mp_bonus"):
         stat_parts.append(f"💧{item['mp_bonus']}" if lang == "ru" else f"+{item['mp_bonus']} MP")
     base = f"{emoji} {prefix}{name}{suffix} {{ {'|'.join(stat_parts)} }}"
+    if item.get("set"):
+        from core.loot import get_set_config
+        conf = get_set_config(item["set"]) or {}
+        sname = conf.get("name_ru", item["set"]) if lang == "ru" else conf.get("name_en", item["set"])
+        base += f"\n  🔱 {sname}"
+    sockets = item.get("sockets") or 0
+    if sockets:
+        gem_icons = {"ruby": "🔴", "emerald": "🟢", "sapphire": "🔵", "amethyst": "🟣", "diamond": "💎"}
+        filled = [gem_icons.get(g, "💠") for g in (item.get("socketed") or [])]
+        empty = ["⬜"] * (sockets - len(filled))
+        base += f"\n  🔮 {' '.join(filled + empty)}"
     if flair:
         base += f"\n  _{flair}_"
     return base
@@ -148,6 +159,18 @@ def item_string_html(item: dict, lang: str = "ru") -> str:
     stats = " | ".join(stat_parts)
     name_escaped = f"{prefix}{name}{suffix}".replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
     base = f"{emoji} <b>{name_escaped}</b> {{{stats}}}"
+    if item.get("set"):
+        from core.loot import get_set_config
+        conf = get_set_config(item["set"]) or {}
+        sname = conf.get("name_ru", item["set"]) if lang == "ru" else conf.get("name_en", item["set"])
+        sname_escaped = sname.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+        base += f"\n  🔱 <i>{sname_escaped}</i>"
+    sockets = item.get("sockets") or 0
+    if sockets:
+        gem_icons = {"ruby": "🔴", "emerald": "🟢", "sapphire": "🔵", "amethyst": "🟣", "diamond": "💎"}
+        filled = [gem_icons.get(g, "💠") for g in (item.get("socketed") or [])]
+        empty = ["⬜"] * (sockets - len(filled))
+        base += f"\n  🔮 {' '.join(filled + empty)}"
     if flair:
         flair_escaped = flair.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
         base += f"\n  <i>{flair_escaped}</i>"

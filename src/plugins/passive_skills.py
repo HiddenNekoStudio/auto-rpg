@@ -159,6 +159,10 @@ class PassiveSkillsPlugin(GamePlugin):
                 await self._show_equipped(query, player, lang)
                 return
             
+            if data == "passives_list_all":
+                await self._show_all(query, player, lang)
+                return
+            
             if data.startswith("passive_buy_"):
                 passive_id = data.replace("passive_buy_", "")
                 from game.skills.passives.registry import PassiveSkillRegistry, _get_price
@@ -260,7 +264,7 @@ class PassiveSkillsPlugin(GamePlugin):
         owned = await PassiveSkillRegistry.get_all_passives(player.uid)
         racial_ids = list(cfg.RACIAL_PASSIVES.values())
         equipped_count = sum(1 for p in owned if p.equipped and p.passive_id not in racial_ids)
-        max_slots = 5
+        max_slots = getattr(cfg, 'PASSIVE_MAX_SLOTS', 5)
         
         if lang != "en":
             title = f"🎯 <b>Пассивные Навыки</b>\n\n💰 Золото: <b>{player.gold}</b>\n📦 Слоты: {equipped_count}/{max_slots}"
@@ -328,6 +332,42 @@ class PassiveSkillsPlugin(GamePlugin):
         rows.append([InlineKeyboardButton("◀️ Назад" if lang != "en" else "◀️ Back", callback_data="passives_menu")])
         
         await safe_edit(query, "\n".join(lines), parse_mode="HTML", reply_markup=InlineKeyboardMarkup(rows))
+    
+    async def _show_all(self, query, player, lang: str):
+        from handlers.user import safe_edit
+        from game.skills.passives.registry import PassiveSkillRegistry
+        from game.skills.passives import PassiveRegistry
+        from telegram import InlineKeyboardButton, InlineKeyboardMarkup
+        import config as cfg
+        
+        owned = await PassiveSkillRegistry.get_all_passives(player.uid)
+        racial_ids = list(cfg.RACIAL_PASSIVES.values())
+        
+        if lang != "en":
+            title = f"📋 <b>Все навыки</b> ({len(owned)})\n\n"
+        else:
+            title = f"📋 <b>All Skills</b> ({len(owned)})\n\n"
+        
+        buttons = []
+        for p in owned:
+            effect = PassiveRegistry.get(p.passive_id)
+            if not effect:
+                continue
+            name = effect.get_name(lang)
+            racial_tag = "🧬 " if p.passive_id in racial_ids else ""
+            eq_tag = "⚔️" if p.equipped else "📦"
+            title += f"{eq_tag} {racial_tag}{effect.icon} <b>{name}</b> Lv.{p.level}\n"
+            buttons.append([InlineKeyboardButton(
+                f"{effect.icon} {name} (Lv.{p.level})",
+                callback_data=f"passive_info_{p.passive_id}"
+            )])
+        
+        if not owned:
+            title += "Нет навыков" if lang != "en" else "No skills"
+        
+        rows = list(buttons)
+        rows.append([InlineKeyboardButton("◀️ Назад" if lang != "en" else "◀️ Back", callback_data="passives_menu")])
+        await safe_edit(query, title, parse_mode="HTML", reply_markup=InlineKeyboardMarkup(rows))
     
     async def _show_equipped(self, query, player, lang: str):
         from handlers.user import safe_edit
@@ -439,7 +479,11 @@ class PassiveSkillsPlugin(GamePlugin):
             else:
                 title += f"\n\n⚡ Current level: {level}\n[{bar}] {xp}/{threshold} to next level"
             
-            eq_mark = "⚔️ Экипировано" if lang != "en" else "⚔️ Equipped" if owned.equipped else "📦 В инвентаре" if lang != "en" else "📦 In inventory"
+            eq_mark = (
+                ("⚔️ Экипировано" if owned.equipped else "📦 В инвентаре")
+                if lang != "en"
+                else ("⚔️ Equipped" if owned.equipped else "📦 In inventory")
+            )
             title += f"\n{eq_mark}"
             
             upgrade_cost = calc_upgrade_cost(owned.level) if owned.level < max_lv else 0

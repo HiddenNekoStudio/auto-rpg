@@ -54,12 +54,13 @@ async def randomevent(bot: Bot, player: Player):
 
     await player.update(_columns=["nextxp", "totalxplost"])
 
-    # NEW QUEST SYSTEM - XP gained
-    try:
-        from game.quests import on_xp_gained
-        await on_xp_gained(player, val)
-    except Exception:
-        pass
+    # NEW QUEST SYSTEM - XP gained (только gain-события, bevent — потеря XP)
+    if event_choice != "bevent":
+        try:
+            from game.quests import on_xp_gained
+            await on_xp_gained(player, val)
+        except Exception:
+            pass
 
     item, slot, replaced = await get_item(player)
     footer = t(lang, "loot_stronger", slot=slot) if replaced else t(lang, "loot_weaker", slot=slot)

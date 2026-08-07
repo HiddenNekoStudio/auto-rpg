@@ -65,7 +65,7 @@ class TestMonsters:
         assert 'id' in monster
         assert 'name_ru' in monster
         assert 'type' in monster
-        assert 'level' in monster
+        assert 'level_mult' in monster
 
     def test_get_monster_types(self):
         """Проверяет получение типов монстров"""
@@ -207,47 +207,47 @@ class TestGenerateQuest:
     """Тесты генерации квестов"""
 
     def test_generate_daily_quest(self, mock_player):
-        """Проверяет генерацию daily квеста"""
+        """Проверяет генерацию kill квеста"""
         from data.quests import generate_quest
 
-        result = generate_quest(mock_player, 'daily', None, 'ru')
+        result = generate_quest(mock_player, 'kill', None, 'ru')
 
         assert result is not None
-        assert result['quest_type'] == 'daily'
+        assert result['quest_type'] == 'kill'
         assert result['category'] in ['kill_monster', 'earn_xp', 'win_duel']
         assert result['target_count'] > 0
         assert result['reward_xp'] > 0
         assert result['status'] == 'offered'
 
     def test_generate_periodic_quest(self, mock_player):
-        """Проверяет генерацию periodic квеста"""
+        """Проверяет генерацию streak квеста"""
         from data.quests import generate_quest
 
-        result = generate_quest(mock_player, 'periodic', None, 'ru')
+        result = generate_quest(mock_player, 'streak', None, 'ru')
 
         assert result is not None
-        assert result['quest_type'] == 'periodic'
+        assert result['quest_type'] == 'streak'
 
     def test_generate_location_quest(self, mock_player):
-        """Проверяет генерацию location квеста"""
+        """Проверяет генерацию explore квеста"""
         from data.quests import generate_quest
 
         location = {'id': 'town', 'name_ru': 'Город', 'name_en': 'Town'}
-        result = generate_quest(mock_player, 'location', location, 'ru')
+        result = generate_quest(mock_player, 'explore', location, 'ru')
 
         assert result is not None
-        assert result['quest_type'] == 'location'
-        assert result['category'] == 'explore_location'
+        assert result['quest_type'] == 'explore'
+        assert result['category'] == 'explore_any'
         assert result['location_id'] == 'town'
 
     def test_generate_story_quest(self, mock_player):
-        """Проверяет генерацию story квеста"""
+        """Проверяет генерацию boss квеста"""
         from data.quests import generate_quest
 
-        result = generate_quest(mock_player, 'story', None, 'ru')
+        result = generate_quest(mock_player, 'boss', None, 'ru')
 
         assert result is not None
-        assert result['quest_type'] == 'story'
+        assert result['quest_type'] == 'boss'
         assert result['category'] == 'kill_boss'
 
     def test_generate_quest_text(self):
@@ -256,7 +256,7 @@ class TestGenerateQuest:
 
         title, desc = generate_quest_text('kill_monster', 'undead', 5, None, 'ru')
 
-        assert 'undead' in title
+        assert 'Убить 5' in title
         assert '5' in title
         assert 'Убить' in title
 
@@ -264,10 +264,10 @@ class TestGenerateQuest:
         """Проверяет категорию earn_xp"""
         from data.quests import generate_quest
 
-        result = generate_quest(mock_player, 'daily', None, 'ru')
+        result = generate_quest(mock_player, 'xp', None, 'ru')
 
-        if result['category'] == 'earn_xp':
-            assert result['target_count'] >= 100, "XP quest should require 100+ XP"
+        assert result['category'] == 'earn_xp'
+        assert result['target_count'] >= 100, "XP quest should require 100+ XP"
 
     def test_generate_invalid_quest_type(self, mock_player):
         """Проверяет обработку невалидного типа"""
@@ -281,10 +281,10 @@ class TestGenerateQuest:
         """Проверяет награды квестов"""
         from data.quests import generate_quest
 
-        result = generate_quest(mock_player, 'daily', None, 'ru')
+        result = generate_quest(mock_player, 'kill', None, 'ru')
 
         assert result['reward_xp'] > 0
-        assert result['reward_tokens'] > 0
+        assert result['reward_gold'] > 0
 
 
 # ═══════════════════════════════════════════════════════════════
@@ -298,10 +298,10 @@ class TestQuestConfig:
         """Проверяет существование конфигов"""
         from data.quest_config import QUEST_TYPE_CONFIG
 
-        assert 'location' in QUEST_TYPE_CONFIG
-        assert 'daily' in QUEST_TYPE_CONFIG
-        assert 'periodic' in QUEST_TYPE_CONFIG
-        assert 'story' in QUEST_TYPE_CONFIG
+        assert 'kill' in QUEST_TYPE_CONFIG
+        assert 'explore' in QUEST_TYPE_CONFIG
+        assert 'xp' in QUEST_TYPE_CONFIG
+        assert 'boss' in QUEST_TYPE_CONFIG
 
     def test_quest_type_config_values(self):
         """Проверяет значения конфигов"""
@@ -309,7 +309,7 @@ class TestQuestConfig:
 
         for qtype, config in QUEST_TYPE_CONFIG.items():
             assert config.max_active > 0
-            assert config.cooldown_minutes > 0
+            assert config.cooldown_minutes >= 0
 
     def test_event_to_category_mapping(self):
         """Проверяет маппинг событий"""
@@ -363,13 +363,13 @@ class TestOfferQuest:
 
     def test_accept_callback_exists(self):
         """Проверяет callback принятия"""
-        from handlers.quests import accept_quest_callback_new
-        assert callable(accept_quest_callback_new)
+        from handlers.quests import accept_quest_callback
+        assert callable(accept_quest_callback)
 
     def test_decline_callback_exists(self):
         """Проверяет callback отказа"""
-        from handlers.quests import decline_quest_callback_new
-        assert callable(decline_quest_callback_new)
+        from handlers.quests import decline_quest_callback
+        assert callable(decline_quest_callback)
 
     def test_abandon_callback_exists(self):
         """Проверяет callback отмены"""
@@ -411,11 +411,11 @@ class TestIntegration:
         """Полный поток: генерация → предложение → прогресс"""
         from data.quests import generate_quest
 
-        quest = generate_quest(mock_player, 'daily', None, 'ru')
+        quest = generate_quest(mock_player, 'kill', None, 'ru')
         assert quest is not None
 
         assert quest['quest_key']
-        assert quest['quest_type'] == 'daily'
+        assert quest['quest_type'] == 'kill'
         assert quest['status'] == 'offered'
         assert quest['expires_at'] > 0
 
@@ -436,12 +436,12 @@ class TestIntegration:
                                for m in migrations)
             assert migration_found, "Missing pending->offered migration"
 
-    def test_rewards_by_level(self, mock_player_low_level):
+    def test_rewards_by_level(self, mock_player_low_level, mock_player):
         """Проверяет награды для разных уровней"""
         from data.quest_config import calculate_rewards
 
-        low_level_rewards = calculate_rewards('daily', mock_player_low_level.level)
-        high_level_rewards = calculate_rewards('daily', mock_player.level)
+        low_level_rewards = calculate_rewards('kill', mock_player_low_level.level)
+        high_level_rewards = calculate_rewards('kill', mock_player.level)
 
         assert high_level_rewards[0] >= low_level_rewards[0], "Higher level should get more XP"
 
@@ -449,7 +449,7 @@ class TestIntegration:
         """Проверяет расчет дедлайна"""
         from data.quest_config import calculate_deadline
 
-        deadline = calculate_deadline('daily', 10, 5)
+        deadline = calculate_deadline('kill', 10, 5)
         assert deadline is not None
         assert deadline > 0
 

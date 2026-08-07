@@ -69,8 +69,25 @@ async def health(request):
 
 
 async def ready(request):
-    """Эндпоинт /ready — liveness probe"""
-    return web.json_response({"ready": True})
+    """Эндпоинт /ready — readiness probe: бот жив и БД отвечает."""
+    try:
+        from db import database
+        await database.fetch_val("SELECT 1")
+        db_ok = True
+    except Exception as e:
+        logger.warning(f"Readiness DB check failed: {e}")
+        db_ok = False
+
+    bot_ok = _bot_instance is not None
+    if bot_ok:
+        try:
+            bot_ok = (await _bot_instance.get_me()) is not None
+        except Exception as e:
+            logger.warning(f"Readiness bot check failed: {e}")
+            bot_ok = False
+
+    ready_ok = bot_ok and db_ok
+    return web.json_response({"ready": ready_ok}, status=200 if ready_ok else 503)
 
 
 async def start_http_server(port: int = 8080, bot=None):

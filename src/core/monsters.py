@@ -21,3 +21,23 @@ monster_list_en = [
     "Troglodyte", "Ice Golem", "Shadow Vampire", "Bone Knight",
     "Sea Serpent", "Blood Witch", "Fire Elemental",
 ]
+
+# ─────────────────────────────────────────────
+#  Лёгкий кэш тип → element из data/monsters.json
+# ─────────────────────────────────────────────
+_TypeConfig: dict[str, str] | None = None
+
+
+def monster_config_type(monster_id: str) -> str:
+    """Тип монстра (animal/undead/...) по id из data/monsters.json."""
+    global _TypeConfig
+    if _TypeConfig is None:
+        import json
+        from pathlib import Path
+        _TypeConfig = {}
+        path = Path(__file__).parent.parent / "data" / "monsters.json"
+        if path.exists():
+            with open(path) as f:
+                for m in json.load(f):
+                    _TypeConfig[m.get("id")] = m.get("type", "")
+    return _TypeConfig.get(monster_id, "")

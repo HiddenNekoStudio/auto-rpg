@@ -346,7 +346,13 @@ async def _profile_text_async(player) -> str:
 
     # ── Header ──
     name_label = "Имя" if lang != "en" else "Name"
-    lines = [f"👤 {name_label}: {esc(player.name)}"]
+    title = (player.title_id or "") if getattr(player, "title_id", "") else ""
+    if title:
+        from game.titles import title_name
+        tname = await title_name(title, lang)
+        lines = [f"👑 <b>{esc(tname)}</b> — {esc(player.name)}"]
+    else:
+        lines = [f"👤 {name_label}: {esc(player.name)}"]
 
     # ── Identity ──
     race_name = _race_display(player)
@@ -386,11 +392,64 @@ async def _profile_text_async(player) -> str:
     lines.append(f"💧 <b>{player_mp}</b>/{player_max_mp} {mp_bar(player_mp, player_max_mp)}")
     lines.append(f"🛡️ Def: {defense}  ⚔️ DPS: {dps}  🛡️ DR: {dr_pct}%")
 
+    # ── Equipped pet ──
+    from game.pets import get_equipped, get_pet_config, _level_mult
+    from handlers.pets import _bonus_text
+    pet = await get_equipped(player.uid)
+    if pet:
+        conf = get_pet_config(pet.pet_id) or {}
+        if conf:
+            icon = conf.get("icon", "✨")
+            pname = conf.get("name_ru", pet.pet_id) if lang != "en" else conf.get("name_en", pet.pet_id)
+            threshold = max(1, pet.level * cfg.PET_XP_THRESHOLD_BASE)
+            bar_len = 10
+            filled = min(bar_len, int(pet.xp / threshold * bar_len))
+            bar = "█" * filled + "░" * (bar_len - filled)
+            lines.append(f"🐾 <b>{'Питомец' if lang != 'en' else 'Pet'}</b>: {icon} {esc(pname)} Lv.{pet.level} [{bar}] {pet.xp}/{threshold}")
+            bonuses = _bonus_text(conf, _level_mult(pet.level), lang)
+            if bonuses:
+                lines.append(f"   ✨ {'Бонусы' if lang != 'en' else 'Bonuses'}: {bonuses}")
+
+    lines.append(SEP)
+
+    # ── Set bonuses ──
+    set_bonuses = player.get_set_bonuses()
+    if set_bonuses:
+        from core.loot import get_set_config
+        set_lines = []
+        for sid, bonus in set_bonuses.items():
+            conf = get_set_config(sid) or {}
+            sname = conf.get("name_ru", sid) if lang != "en" else conf.get("name_en", sid)
+            parts = []
+            for key, val in bonus.items():
+                if key == "dps_pct":
+                    parts.append(f"+{int(val)}% ⚔️")
+                elif key == "hp_pct":
+                    parts.append(f"+{int(val)}% ❤️")
+                elif key == "def":
+                    parts.append(f"+{int(val)} 🛡️")
+                elif key == "mp":
+                    parts.append(f"+{int(val)} 💧")
+                else:
+                    parts.append(f"+{int(val)} {key}")
+            set_lines.append(f"🔱 {sname}: {', '.join(parts)}")
+        lines.append(f"🔱 {'Наборы' if lang != 'en' else 'Sets'}:")
+        lines.extend(set_lines)
+
     lines.append(SEP)
 
     # ── Economy & Progression ──
     lines.append(f"💰 <b>{format_short(player.gold)}</b>  ⚡ <b>{format_short(player.totalxp)}</b> XP  🎫 <b>{player.tokens}</b>")
     lines.append(f"⏱️ {ctime(nextlevel, lang)} {'→ ур.' if lang != 'en' else '→ lvl.'} {player.level + 1}")
+
+    # ── Achievements ──
+    try:
+        from db import PlayerAchievement
+        ach_count = await PlayerAchievement.objects.filter(player_uid=player.uid).count()
+        from game.achievements import all_achievements
+        lines.append(f"🏆 {'Достижения' if lang != 'en' else 'Achievements'}: {ach_count}/{len(all_achievements())}")
+    except Exception:
+        pass
 
     lines.append(SEP)
 
@@ -574,8 +633,89 @@ async def _stats_text_async(player) -> str:
     lines.append(t(lang, "stats_fights", total=total_fights))
     lines.append(t(lang, "stats_win_rate", rate=win_rate))
     lines.append(t(lang, "stats_best_streak", streak=streak))
+    if streak > 0:
+        combo_pct = min(streak * cfg.COMBO_STREAK_BONUS_PER_WIN, cfg.COMBO_STREAK_MAX_MULT)
+        lines.append(t(lang, "stats_combo", pct=int(combo_pct * 100)))
     lines.append(t(lang, "stats_kills", kills=player.monster_kills or 0))
     lines.append(t(lang, "stats_deaths", deaths=player.monster_deaths or 0))
+
+    lines.append(SEP)
+
+    # ── Weapon element ──
+    weapon = player.weapon
+    if isinstance(weapon, str):
+        try:
+            import json as _json
+            weapon = _json.loads(weapon)
+        except (_json.JSONDecodeError, TypeError):
+            weapon = {}
+    elem = (weapon or {}).get("element", "")
+    if elem:
+        elem_name = cfg.ELEMENT_NAMES_EN.get(elem, elem) if lang == "en" else cfg.ELEMENT_NAMES_RU.get(elem, elem)
+        lines.append(t(lang, "stats_weapon_element", element=elem_name))
+
+    # ── Pets ──
+    from db import PlayerPet, DungeonRun, ArenaRun, ClanBossHit
+    from game.pets import get_equipped, get_pet_config
+    owned_pets = await PlayerPet.objects.filter(player_uid=player.uid).count()
+    lines.append(t(lang, "stats_pets_total", count=owned_pets))
+
+    eq_pet = await get_equipped(player.uid)
+    if eq_pet:
+        conf = get_pet_config(eq_pet.pet_id) or {}
+        pet_name = conf.get("name_en", eq_pet.pet_id) if lang == "en" else conf.get("name_ru", eq_pet.pet_id)
+        combat = "combat" in conf
+        pet_line = t(lang, "stats_pets_equipped", name=pet_name, level=eq_pet.level)
+        if combat:
+            pet_line += t(lang, "stats_pets_combat")
+        lines.append(pet_line)
+        level_mult = 1.0 + (eq_pet.level - 1) * cfg.PET_LEVEL_GROWTH
+        bonuses = []
+        for key, fmt in (("dps_pct", "+{v}% DPS"), ("hp_pct", "+{v}% HP"),
+                         ("def", "+{v} DEF"), ("gold_pct", "+{v}% 💰"),
+                         ("xp_pct", "+{v}% XP")):
+            val = conf.get("bonuses", {}).get(key, 0) * level_mult
+            if val:
+                bonuses.append(fmt.format(v=int(val)))
+        if bonuses:
+            lines.append(t(lang, "stats_pets_bonuses", bonuses=", ".join(bonuses)))
+
+    lines.append(SEP)
+
+    # ── Dungeons ──
+    won_dungeons = await DungeonRun.objects.filter(
+        player_uid=player.uid, status="won"
+    ).count()
+    best_dungeon = await DungeonRun.objects.filter(
+        player_uid=player.uid, status="won"
+    ).order_by("-max_floor").limit(1).get_or_none()
+    lines.append(t(lang, "stats_dungeon_done", count=won_dungeons))
+    if best_dungeon:
+        lines.append(t(lang, "stats_dungeon_best", floor=best_dungeon.max_floor))
+    active_dg = await DungeonRun.objects.filter(
+        player_uid=player.uid, status="active"
+    ).get_or_none()
+    if active_dg:
+        lines.append(t(lang, "stats_dungeon_active", floor=active_dg.floor,
+                       rooms=active_dg.max_floor))
+
+    # ── Arena ──
+    best_arena = await ArenaRun.objects.filter(
+        player_uid=player.uid
+    ).order_by("-best_wave").limit(1).get_or_none()
+    lines.append(t(lang, "stats_arena_best", wave=best_arena.best_wave if best_arena else 0))
+    active_ar = await ArenaRun.objects.filter(
+        player_uid=player.uid, status="active"
+    ).get_or_none()
+    if active_ar:
+        lines.append(t(lang, "stats_arena_active", wave=active_ar.wave))
+
+    # ── Clan bosses ──
+    boss_hits = await ClanBossHit.objects.filter(player_uid=player.uid).all()
+    total_dmg = sum(h.damage or 0 for h in boss_hits)
+    lines.append(t(lang, "stats_clan_boss_dmg", dmg=format_short(total_dmg) if total_dmg else 0))
+    if boss_hits:
+        lines.append(t(lang, "stats_clan_boss_hits", count=len(boss_hits)))
 
     lines.append(SEP)
 
@@ -606,14 +746,8 @@ async def _stats_text_async(player) -> str:
     return "\n".join(lines)
 
 
-async def cmd_profile(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user = update.effective_user
-    player = await Player.objects.get_or_none(uid=user.id)
-    if not player:
-        await update.message.reply_text(t("ru", "not_registered"))
-        return
-    lang = player.lang or "ru"
-    keyboard = InlineKeyboardMarkup([
+def _profile_keyboard(lang: str) -> InlineKeyboardMarkup:
+    rows = [
         [
             InlineKeyboardButton(t(lang, "refresh"),  callback_data="menu_profile"),
             InlineKeyboardButton(t(lang, "btn_quest"), callback_data="menu_quest"),
@@ -623,13 +757,35 @@ async def cmd_profile(update: Update, context: ContextTypes.DEFAULT_TYPE):
             InlineKeyboardButton("🎯 Навыки" if lang != "en" else "🎯 Skills", callback_data="menu_passives"),
         ],
         [
-            InlineKeyboardButton(t(lang, "btn_character"), callback_data="char_hub"),
+            InlineKeyboardButton("⚔️ Сражение" if lang != "en" else "⚔️ Battle", callback_data="battle_menu"),
+            InlineKeyboardButton("🐾 Питомцы" if lang != "en" else "🐾 Pets", callback_data="pets_menu"),
         ],
+        [
+            InlineKeyboardButton("🏆 Достижения" if lang != "en" else "🏆 Achievements", callback_data="ach_menu"),
+            InlineKeyboardButton("💎 Камни" if lang != "en" else "💎 Gems", callback_data="gems_menu"),
+            InlineKeyboardButton("📜 Титулы" if lang != "en" else "📜 Titles", callback_data="titles_menu"),
+        ],
+        [
+            InlineKeyboardButton("⭐ Престиж" if lang != "en" else "⭐ Prestige", callback_data="prestige_manage"),
+            InlineKeyboardButton(t(lang, "daily_menu_btn"), callback_data="daily_menu"),
+            InlineKeyboardButton(t(lang, "clan_btn"), callback_data="clan_menu"),
+        ],
+        [InlineKeyboardButton(t(lang, "btn_character"), callback_data="char_hub")],
         [InlineKeyboardButton(t(lang, "menu"), callback_data="menu_back")],
-    ])
+    ]
+    return InlineKeyboardMarkup(rows)
+
+
+async def cmd_profile(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user = update.effective_user
+    player = await Player.objects.get_or_none(uid=user.id)
+    if not player:
+        await update.message.reply_text(t("ru", "not_registered"))
+        return
+    lang = player.lang or "ru"
     player = await Player.objects.get(uid=player.uid)
     await update.message.reply_text(await _profile_text_async(player), parse_mode="HTML",
-                                    reply_markup=keyboard)
+                                    reply_markup=_profile_keyboard(lang))
 
 
 # ── Callback главного меню ────────────────────
@@ -829,23 +985,40 @@ async def callback_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if not player:
             await safe_edit(query, t(lang, "not_registered"))
             return
-        rows = [
-            [
-                InlineKeyboardButton(t(lang, "refresh"),  callback_data="menu_profile"),
-                InlineKeyboardButton(t(lang, "btn_quest"), callback_data="menu_quest"),
-            ],
-            [
-                InlineKeyboardButton("🏪 Магазин" if lang != "en" else "🏪 Shop", callback_data="menu_shop"),
-                InlineKeyboardButton("🎯 Навыки" if lang != "en" else "🎯 Skills", callback_data="menu_passives"),
-            ],
-        ]
-        rows.append([InlineKeyboardButton("⭐ Престиж" if lang != "en" else "⭐ Prestige", callback_data="prestige_manage")])
-        rows.append([InlineKeyboardButton(t(lang, "btn_character"), callback_data="char_hub")])
-        rows.append([InlineKeyboardButton(t(lang, "menu"), callback_data="menu_back")])
-        keyboard = InlineKeyboardMarkup(rows)
         player = await Player.objects.get(uid=player.uid)
         await safe_edit(query, await _profile_text_async(player), parse_mode="HTML",
-                        reply_markup=keyboard)
+                        reply_markup=_profile_keyboard(lang))
+
+    elif action == "battle_menu":
+        if not player:
+            await safe_edit(query, t(lang, "not_registered"))
+            return
+        from handlers.battle import handle_battle_menu
+        await handle_battle_menu(query, player, lang)
+
+    elif action == "menu_hunt":
+        if not player:
+            await safe_edit(query, t(lang, "not_registered"))
+            return
+        from handlers.hunting import handle_hunt_menu
+        player = await Player.objects.get(uid=player.uid)
+        await handle_hunt_menu(query, player, lang)
+
+    elif action == "menu_dungeons":
+        if not player:
+            await safe_edit(query, t(lang, "not_registered"))
+            return
+        from handlers.dungeons import handle_dungeons_menu
+        player = await Player.objects.get(uid=player.uid)
+        await handle_dungeons_menu(query, player, lang)
+
+    elif action == "arena_menu":
+        if not player:
+            await safe_edit(query, t(lang, "not_registered"))
+            return
+        from handlers.arena import handle_arena_menu
+        player = await Player.objects.get(uid=player.uid)
+        await handle_arena_menu(query, player, lang)
 
     elif action == "menu_stats":
         if not player:
@@ -1051,11 +1224,6 @@ async def callback_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     elif action == "menu_info":
         await _show_info(query, lang)
-
-    elif action == "menu_bosses":
-        from game.bosses import format_boss_list
-        text = await format_boss_list(lang)
-        await safe_edit(query, text, parse_mode="HTML")
 
     elif action == "menu_maps":
         from handlers.maps import send_map_view
@@ -1282,7 +1450,7 @@ async def _show_quest(query, lang: str):
 
 async def _show_top(query, lang: str):
     from ui.icons import SEP, MEDAL, ONLINE, OFFLINE
-    top_players = await Player.objects.order_by("-level", "-totalxp").limit(10).all()
+    top_players = await Player.objects.order_by(["-level", "-totalxp"]).limit(10).all()
     total  = await Player.objects.filter().count()
     online = await Player.objects.filter(online=True).count()
 
@@ -1356,7 +1524,7 @@ async def cmd_top(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user
     player = await Player.objects.get_or_none(uid=user.id)
     lang = (player.lang or "ru") if player else "ru"
-    top_players = await Player.objects.order_by("-level", "-totalxp").limit(10).all()
+    top_players = await Player.objects.order_by(["-level", "-totalxp"]).limit(10).all()
     total  = await Player.objects.filter().count()
     online = await Player.objects.filter(online=True).count()
     lines = []
@@ -1401,8 +1569,9 @@ async def _build_passives_text(player, lang: str) -> tuple[str, InlineKeyboardMa
     from ui.bars import skill_bar
 
     owned = await PassiveSkillRegistry.get_all_passives(player.uid)
-    equipped_count = sum(1 for p in owned if p.equipped)
-    max_slots = 5
+    racial_ids = list(cfg.RACIAL_PASSIVES.values())
+    equipped_count = sum(1 for p in owned if p.equipped and p.passive_id not in racial_ids)
+    max_slots = getattr(cfg, 'PASSIVE_MAX_SLOTS', 5)
 
     lines = [
         "🎯 <b>Пассивные навыки</b>" if lang != "en" else "🎯 <b>Passive Skills</b>",

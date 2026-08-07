@@ -6,6 +6,7 @@ import logging
 import time
 from typing import Optional
 
+import config as cfg
 from db import Player, PlayerQuest
 from data.quest_config import (
     QuestCategory,
@@ -143,12 +144,12 @@ async def send_quest_progress_notification(player: Player, quest: PlayerQuest, n
         
         if lang == "en":
             text = (
-                f"{icon} *Quest Progress: {quest.title}*\n"
+                f"{icon} <b>Quest Progress: {quest.title}</b>\n"
                 f"Progress: {quest.progress}/{quest.target_count} ({new_pct}%)"
             )
         else:
             text = (
-                f"{icon} *Прогресс квеста: {quest.title}*\n"
+                f"{icon} <b>Прогресс квеста: {quest.title}</b>\n"
                 f"Прогресс: {quest.progress}/{quest.target_count} ({new_pct}%)"
             )
         
@@ -220,7 +221,12 @@ async def check_quest_progress(
             old_pct = int(old_progress / quest.target_count * 100)
 
         # Увеличиваем прогресс
-        quest.progress += 1
+        if quest.category == "win_battle":
+            quest.progress = max(quest.progress, event_data.get("count", 1))
+        elif quest.category == "earn_xp":
+            quest.progress += max(1, event_data.get("amount", 1))
+        else:
+            quest.progress += 1
         quest.last_progress_at = int(time.time())
 
         # Проверяем новый порог
@@ -253,6 +259,16 @@ async def on_monster_defeated(player: Player, monster_type: str):
         "monster_defeated",
         {"target_id": monster_type}
     )
+    from game.pets import add_pet_xp
+    try:
+        await add_pet_xp(player, cfg.PET_XP_PER_KILL)
+    except Exception:
+        logging.exception("pet xp on kill error")
+    from game.achievements import on_monster_defeated as _ach
+    try:
+        await _ach(player)
+    except Exception:
+        logging.exception("achievements on kill error")
 
 
 async def on_xp_gained(player: Player, amount: int):
@@ -262,6 +278,11 @@ async def on_xp_gained(player: Player, amount: int):
         "xp_gained",
         {"target_id": "xp", "amount": amount}
     )
+    from game.achievements import on_xp_gained as _ach
+    try:
+        await _ach(player)
+    except Exception:
+        logging.exception("achievements on xp error")
 
 
 async def on_duel_win(player: Player):
@@ -271,6 +292,11 @@ async def on_duel_win(player: Player):
         "duel_win",
         {"target_id": "player"}
     )
+    from game.achievements import on_duel_win as _ach
+    try:
+        await _ach(player)
+    except Exception:
+        logging.exception("achievements on duel error")
 
 
 async def on_location_enter(player: Player, location_id: str):
@@ -282,15 +308,6 @@ async def on_location_enter(player: Player, location_id: str):
     )
 
 
-async def on_level_reached(player: Player, new_level: int):
-    """При повышении уровня — авто-выполнение level квестов"""
-    await check_quest_progress(
-        player,
-        "level_up",
-        {"target_id": str(new_level), "level": new_level}
-    )
-
-
 async def on_boss_defeated(player: Player, boss_id: str, team_size: int = 1):
     """При победе над боссом"""
     await check_quest_progress(
@@ -298,6 +315,19 @@ async def on_boss_defeated(player: Player, boss_id: str, team_size: int = 1):
         "boss_defeated",
         {"target_id": boss_id, "team_size": team_size}
     )
+    from game.pets import add_pet_xp, maybe_drop_pet
+    try:
+        await add_pet_xp(player, cfg.PET_XP_PER_BOSS)
+        dropped = await maybe_drop_pet(player, "boss")
+        if dropped:
+            await _notify_pet_drop(player, dropped)
+    except Exception:
+        logging.exception("pet boss hook error")
+    from game.achievements import on_boss_defeated as _ach
+    try:
+        await _ach(player)
+    except Exception:
+        logging.exception("achievements on boss error")
 
 
 # ═══════════════════════════════════════════════════════════════
@@ -305,21 +335,37 @@ async def on_boss_defeated(player: Player, boss_id: str, team_size: int = 1):
 # ═══════════════════════════════════════════════════════════════
 
 async def on_death(player: Player):
-    """При проигрыше в бою (триггер для квестов выживания)"""
-    await check_quest_progress(
-        player,
-        "death",
-        {"target_id": "survive"}
-    )
+    """При проигрыше в бою — сброс прогресса квестов серии/выживания."""
+    quests = await PlayerQuest.objects.filter(
+        player_uid=player.uid,
+        category__in=["survive", "win_battle"],
+        status="active"
+    ).all()
+
+    for quest in quests:
+        if quest.progress > 0:
+            quest.progress = 0
+            quest.last_progress_at = int(time.time())
+            await quest.update()
 
 
 async def on_win_streak(player: Player, streak_count: int):
-    """При победе в бою - обновляет серию побед"""
+    """При победе в бою — обновляет серию побед и квесты выживания"""
     await check_quest_progress(
         player,
         "win_streak",
-        {"target_id": str(streak_count), "count": streak_count}
+        {"target_id": "streak", "count": streak_count}
     )
+    await check_quest_progress(
+        player,
+        "battle_won",
+        {"target_id": "survive"}
+    )
+    from game.achievements import on_win_streak as _ach
+    try:
+        await _ach(player)
+    except Exception:
+        logging.exception("achievements on streak error")
 
 
 async def on_rare_drop(player: Player, rarity: str):
@@ -329,6 +375,39 @@ async def on_rare_drop(player: Player, rarity: str):
         "rare_drop",
         {"target_id": rarity}
     )
+    from game.achievements import on_rare_drop as _ach
+    try:
+        await _ach(player)
+    except Exception:
+        logging.exception("achievements on rare drop error")
+    from game.pets import maybe_drop_pet
+    try:
+        dropped = await maybe_drop_pet(player, "rare")
+        if dropped:
+            await _notify_pet_drop(player, dropped)
+    except Exception:
+        logging.exception("pet rare drop hook error")
+
+
+async def _notify_pet_drop(player: Player, pet_id: str):
+    """Сообщить игроку о дропнувшемся питомце."""
+    try:
+        from game.pets import get_pet_config
+        from bot import send_to_players, get_bot
+        bot = get_bot()
+        if bot is None:
+            return
+        conf = get_pet_config(pet_id) or {}
+        lang = player.lang or "ru"
+        name = conf.get("name_ru", pet_id) if lang != "en" else conf.get("name_en", pet_id)
+        icon = conf.get("icon", "✨")
+        if lang == "en":
+            text = f"🎁 <b>New pet found!</b>\n{icon} {name} joined you! Check /pets"
+        else:
+            text = f"🎁 <b>Новый питомец найден!</b>\n{icon} {name} присоединился к тебе! Загляни в /pets"
+        await send_to_players(bot, text, player_uids=[player.uid], parse_mode="HTML")
+    except Exception as e:
+        logging.error(f"Pet drop notification error: {e}")
 
 
 # ═══════════════════════════════════════════════════════════════
@@ -339,13 +418,9 @@ async def complete_quest(player: Player, quest: PlayerQuest, bot=None):
     """Успешное выполнение квеста"""
     
     xp, gold = calculate_rewards(quest.quest_type, player.level)
-    
-    team_bonus = quest.category == "kill_boss"
-    if team_bonus and quest.completed_at and quest.completed_at > 0:
-        team_size = getattr(quest, "team_size", 1)
-        if team_size > 1:
-            xp = int(xp * min(1 + (team_size - 1) * 0.5, 2.5))
-            gold = int(gold * min(1 + (team_size - 1) * 0.5, 2.5))
+    # ponytail: team_bonus для kill_boss удалён — колонки team_size в PlayerQuest нет,
+    # getattr возвращал 1, блок был мёртв. Если командные квесты понадобятся — добавить
+    # колонку team_size и пересчитать бонус здесь.
     
     # Prestige бонус XP
     from plugins.vip_shop import has_prestige_xp_bonus, has_prestige_gold_bonus, get_prestige_xp_multiplier, get_prestige_gold_multiplier
@@ -361,7 +436,10 @@ async def complete_quest(player: Player, quest: PlayerQuest, bot=None):
     player.totalxp += xp
     player.gold += gold
     player.totalquests += 1
-    await player.update(_columns=["totalxp", "gold", "totalquests"])
+    tokens = getattr(quest, "bonus_tokens", 0) or 0
+    if tokens:
+        player.tokens = (player.tokens or 0) + tokens
+    await player.update(_columns=["totalxp", "gold", "totalquests", "tokens"])
     
     quest.status = "completed"
     quest.completed_at = int(time.time())
@@ -380,10 +458,13 @@ async def complete_quest(player: Player, quest: PlayerQuest, bot=None):
     from bot import send_to_players
     
     lang = player.lang or "ru"
+    reward_lines = [f"• XP: +{xp}", f"• Gold: +{gold}"]
+    if tokens:
+        reward_lines.append(f"• 🎫 Tokens: +{tokens}")
     if lang == "en":
-        text = f"✅ *Quest completed!*\n\n*{quest.title}*\n\n🎁 Reward:\n• XP: +{xp}\n• Gold: +{gold}"
+        text = f"✅ <b>Quest completed!</b>\n\n<b>{quest.title}</b>\n\n🎁 Reward:\n" + "\n".join(reward_lines)
     else:
-        text = f"✅ *Квест выполнен!*\n\n*{quest.title}*\n\n🎁 Награда:\n• XP: +{xp}\n• Золото: +{gold}"
+        text = f"✅ <b>Квест выполнен!</b>\n\n<b>{quest.title}</b>\n\n🎁 Награда:\n" + "\n".join(reward_lines)
     
     try:
         await send_to_players(bot_instance, text, player_uids=[player.uid], parse_mode="HTML")
@@ -417,9 +498,9 @@ async def fail_quest(player: Player, quest: PlayerQuest, apply_penalty: bool = T
     from bot import send_to_players
     lang = player.lang or "ru"
     if lang == "en":
-        text = f"❌ *Quest failed!*\n\n*{quest.title}*\n\nDeadline expired."
+        text = f"❌ <b>Quest failed!</b>\n\n<b>{quest.title}</b>\n\nDeadline expired."
     else:
-        text = f"❌ *Квест провален!*\n\n*{quest.title}*\n\nИстёк срок выполнения."
+        text = f"❌ <b>Квест провален!</b>\n\n<b>{quest.title}</b>\n\nИстёк срок выполнения."
     
     try:
         await send_to_players(bot_instance, text, player_uids=[player.uid], parse_mode="HTML")

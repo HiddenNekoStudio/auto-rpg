@@ -5,6 +5,7 @@ game/bosses.py — система боссов
 import asyncio
 import datetime
 import json
+import logging
 import math
 import random
 from pathlib import Path
@@ -657,6 +658,8 @@ async def resolve_battle(bot, player: Player, boss: Boss, forced: bool = False, 
     })
     if cls_bonus.get("dps_pct"):
         player_dps = int(player_dps * (1 + cls_bonus["dps_pct"] / 100))
+    from game.pets import pet_dps_mult
+    player_dps = int(player_dps * pet_dps_mult(player.uid))
 
     now_difficulty = get_boss_difficulty(boss)
     if now_difficulty == "medium":
@@ -893,7 +896,8 @@ async def resolve_battle(bot, player: Player, boss: Boss, forced: bool = False, 
         boss.defeated = True
         boss.defeated_at = now
         boss.defeated_by = player.uid
-        await boss.update(_columns=["defeated", "defeated_at", "defeated_by", "legendary_counter", "hp", "max_hp", "mp", "max_mp", "defense"])
+        boss.despawn_at = 0
+        await boss.update(_columns=["defeated", "defeated_at", "defeated_by", "despawn_at", "legendary_counter", "hp", "max_hp", "mp", "max_mp", "defense"])
 
         await player.update(_columns=["nextxp", "wins", "hp", "mp"])
 
@@ -926,6 +930,9 @@ async def resolve_battle(bot, player: Player, boss: Boss, forced: bool = False, 
             total_gold = int(total_gold * get_prestige_gold_multiplier(player))
         if total_gold > 0:
             player.gold += total_gold
+
+        # ponytail: второй update — награды выше (пассивки/престиж/gold) применяются после первого сохранения
+        await player.update(_columns=["gold", "nextxp", "wins", "hp", "mp"])
 
         try:
             from game.quests import on_boss_defeated
@@ -999,8 +1006,12 @@ async def resolve_battle(bot, player: Player, boss: Boss, forced: bool = False, 
         diff_mult = DIFFICULTY_MULTIPLIERS.get(now_difficulty, DIFFICULTY_MULTIPLIERS["medium"])
         val = int(random.randint(4, 6) / 90 * (player.nextxp - player.currentxp) * diff_mult["penalty_mult"])
         val = max(60, val)
-        player.nextxp += val
-        player.totalxplost += val
+
+        from plugins.vip_shop import has_active_protect
+        protect_active = has_active_protect(player)
+        if not protect_active:
+            player.nextxp += val
+            player.totalxplost += val
 
         if player.level > 1:
             player.level -= 1
@@ -1042,6 +1053,11 @@ async def resolve_battle(bot, player: Player, boss: Boss, forced: bool = False, 
         rounds_str = _format_battle_rounds(rounds, player, boss, player_hp, boss_hp, lang)
 
         if lang != "en":
+            penalty_line = (
+                "🛡️ <b>ЗАЩИТА!</b> Штраф XP отменён!"
+                if protect_active else
+                f"⏱️ Штраф: <b>+{ctime(val, lang)}</b>"
+            )
             msg = "\n".join([
                 "💀 <b>ПОРАЖЕНИЕ ОТ БОССА!</b>",
                 "",
@@ -1054,7 +1070,7 @@ async def resolve_battle(bot, player: Player, boss: Boss, forced: bool = False, 
                 f"━━━ Раунды ({len(rounds)}) ━━━",
                 rounds_str,
                 "",
-                f"⏱️ Штраф: <b>+{ctime(val, lang)}</b>",
+                penalty_line,
                 f"📉 Уровень понижен до: <b>{player.level}</b>",
                 f"🗡️ {slot_name} ухудшен(а): {item_name}",
                 "",
@@ -1062,6 +1078,11 @@ async def resolve_battle(bot, player: Player, boss: Boss, forced: bool = False, 
             ])
             msg += passive_info_line
         else:
+            penalty_line = (
+                "🛡️ <b>PROTECT!</b> XP penalty cancelled!"
+                if protect_active else
+                f"⏱️ Penalty: <b>+{ctime(val, 'en')}</b>"
+            )
             msg = "\n".join([
                 "💀 <b>DEFEATED BY BOSS!</b>",
                 "",
@@ -1074,7 +1095,7 @@ async def resolve_battle(bot, player: Player, boss: Boss, forced: bool = False, 
                 f"━━━ Rounds ({len(rounds)}) ━━━",
                 rounds_str,
                 "",
-                f"⏱️ Penalty: <b>+{ctime(val, 'en')}</b>",
+                penalty_line,
                 f"📉 Level reduced to: <b>{player.level}</b>",
                 f"🗡️ {slot_name} downgraded: {item_name}",
                 "",
@@ -1185,9 +1206,11 @@ async def check_and_spawn_bosses(bot) -> None:
     for boss in defeated_bosses:
         boss.defeated = False
         boss.respawn_available = 0
-        await boss.update(_columns=["defeated", "respawn_available"])
+        boss.despawn_at = now + (cfg.BOSS_KILL_WINDOW_HOURS * 3600)
+        await boss.update(_columns=["defeated", "respawn_available", "despawn_at"])
         from plugins.boss_passives import BossPassiveManager
         BossPassiveManager.clear_boss_passives(boss.boss_id)
+        await notify_boss_respawn(bot, boss)
     
     players = await Player.objects.filter(online=True).all()
     
@@ -1198,6 +1221,51 @@ async def check_and_spawn_bosses(bot) -> None:
             lang = player.lang or "ru"
             await send_boss_encounter_alert(bot, player, boss_obj, zone_type, lang)
         await asyncio.sleep(0.05)
+
+
+async def notify_boss_respawn(bot, boss: Boss) -> None:
+    """Уведомить всех онлайн-игроков о респауне босса и окне убийства."""
+    hours = cfg.BOSS_KILL_WINDOW_HOURS
+    title = boss.title
+    loc = boss.location_name
+    msg_ru = (f"⚔️ <b>{title}</b> респаунулся в {loc}!\n"
+              f"⏱️ Убей его в течение {hours} ч, пока он не исчез!")
+    msg_en = (f"⚔️ <b>{title}</b> respawned at {loc}!\n"
+              f"⏱️ Defeat it within {hours} h before it disappears!")
+    players = await Player.objects.filter(online=True, optin=True).all()
+    ru_uids = [p.uid for p in players if (p.lang or "ru") != "en"]
+    en_uids = [p.uid for p in players if (p.lang or "ru") == "en"]
+    if ru_uids:
+        await send_to_players(bot, msg_ru, player_uids=ru_uids)
+    if en_uids:
+        await send_to_players(bot, msg_en, player_uids=en_uids)
+
+
+async def check_boss_despawn(bot) -> None:
+    """Деспаун боссов с истёкшим окном убийства — возврат в цикл респауна."""
+    import time
+    now = int(time.time())
+    window_bosses = await Boss.objects.filter(defeated=False, despawn_at__gt=0).all()
+    for boss in window_bosses:
+        if boss.despawn_at and boss.despawn_at <= now:
+            boss.defeated = True
+            boss.respawn_available = now + (BOSS_RESPAWN_DAYS * 86400)
+            boss.despawn_at = 0
+            await boss.update(_columns=["defeated", "respawn_available", "despawn_at"])
+            title = boss.title
+            loc = boss.location_name
+            msg_ru = (f"💨 <b>{title}</b> исчез из {loc}!\n"
+                      f"Он не был побеждён вовремя и скрылся. Вернётся через несколько дней — поймай его в следующий раз!")
+            msg_en = (f"💨 <b>{title}</b> disappeared from {loc}!\n"
+                      f"It was not defeated in time and vanished. It will return in a few days — catch it next time!")
+            players = await Player.objects.filter(online=True, optin=True).all()
+            ru_uids = [p.uid for p in players if (p.lang or "ru") != "en"]
+            en_uids = [p.uid for p in players if (p.lang or "ru") == "en"]
+            if ru_uids:
+                await send_to_players(bot, msg_ru, player_uids=ru_uids)
+            if en_uids:
+                await send_to_players(bot, msg_en, player_uids=en_uids)
+            logging.info("Босс %s деспаунился (окно убийства истекло)", title)
 
 
 async def format_boss_list(lang: str = "ru") -> str:

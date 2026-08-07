@@ -4,10 +4,17 @@ Mounted on the same aiohttp server as health checks.
 """
 import json
 import logging
+import os
 import time
 from aiohttp import web
-from db import Player, Boss, PlayerPassive, PlayerActiveSkill, StarPurchase, database
+from db import (
+    Player, Boss, PlayerPassive, PlayerActiveSkill, StarPurchase,
+    PlayerPet, DungeonRun, ArenaRun, ClanBoss, Clan, ClanMember,
+    RaidBoss, RaidBossHit,
+    database,
+)
 from health import _bot_instance, _db_connected, _tick_count, _last_tick_time, _last_idle_tick_time
+import config as cfg
 
 logger = logging.getLogger(__name__)
 
@@ -48,7 +55,8 @@ async def handle_stats(request):
             FROM users
         """, {"now_ts": now_ts})
 
-        boss_kills = await Boss.objects.filter(defeated_by__gt=0).count()
+        # ponytail: счётчика настоящих убийств нет в схеме; считаем уникальных боссов
+        bosses_defeated_distinct = await Boss.objects.filter(defeated_by__gt=0).count()
 
         total_rows = 0
         for table_name in sorted(ALLOWED_TABLES):
@@ -60,12 +68,18 @@ async def handle_stats(request):
 
         db_size = 0
         try:
-            result = await database.fetch_one("SELECT pg_database_size('autorpg') as sz")
+            result = await database.fetch_one(f"SELECT pg_database_size('{cfg.DBNAME}') as sz")
             db_size = result["sz"] or 0
         except Exception:
             pass
 
         avg_account_age = int(agg["total_age"] / total_players) if total_players else 0
+
+        total_pets = await PlayerPet.objects.count()
+        active_dungeons = await DungeonRun.objects.filter(status="active").count()
+        active_arenas = await ArenaRun.objects.filter(status="active").count()
+        active_clan_bosses = await ClanBoss.objects.filter(status="active").count()
+        active_raid_boss = await RaidBoss.objects.filter(status="active").get_or_none()
 
         return web.json_response({
             "total_players": total_players,
@@ -77,7 +91,7 @@ async def handle_stats(request):
             "total_quests": agg["total_quests"],
             "total_monster_kills": agg["total_monster_kills"],
             "total_deaths": agg["total_deaths"],
-            "total_boss_kills": boss_kills,
+            "total_boss_kills": bosses_defeated_distinct,
             "total_rows": total_rows,
             "db_size": db_size,
             "total_online_seconds_all": agg["total_online_all"],
@@ -86,6 +100,13 @@ async def handle_stats(request):
             "current_idle_seconds": agg["current_idle_seconds"],
             "current_online_seconds": agg["current_online_seconds"],
             "avg_account_age_seconds": avg_account_age,
+            "total_pets": total_pets,
+            "active_dungeons": active_dungeons,
+            "active_arenas": active_arenas,
+            "active_clan_bosses": active_clan_bosses,
+            "active_raid_boss": ({"id": active_raid_boss.id, "name": active_raid_boss.name,
+                                  "level": active_raid_boss.level, "hp": active_raid_boss.hp,
+                                  "max_hp": active_raid_boss.max_hp} if active_raid_boss else None),
         })
     except Exception as e:
         logger.error(f"Stats API error: {e}")
@@ -239,11 +260,124 @@ async def handle_player_detail(request):
             "total_stars": sum(sp.stars_amount for sp in purchases),
         }
 
+        pets = await PlayerPet.objects.filter(player_uid=p.uid).order_by("-level").all()
+        player["pets"] = [
+            {"pet_id": pet.pet_id, "level": pet.level, "equipped": pet.equipped, "source": pet.source}
+            for pet in pets
+        ]
+
+        dg_run = await DungeonRun.objects.filter(player_uid=p.uid, status="active").get_or_none()
+        if dg_run:
+            player["active_dungeon"] = {"id": dg_run.id, "dungeon_id": dg_run.dungeon_id,
+                                        "floor": dg_run.floor, "max_floor": dg_run.max_floor}
+        else:
+            player["active_dungeon"] = None
+
+        ar_run = await ArenaRun.objects.filter(player_uid=p.uid, status="active").get_or_none()
+        if ar_run:
+            player["active_arena"] = {"id": ar_run.id, "wave": ar_run.wave, "best_wave": ar_run.best_wave}
+        else:
+            player["active_arena"] = None
+
+        arena_best = await ArenaRun.objects.filter(
+            player_uid=p.uid, status__in=["failed", "abandoned"]
+        ).order_by("-best_wave").limit(1).get_or_none()
+        player["arena_best_wave"] = arena_best.best_wave if arena_best else 0
+
+        member = await ClanMember.objects.filter(player_uid=p.uid).get_or_none()
+        if member:
+            clan = await Clan.objects.get_or_none(id=member.clan_id)
+            if clan:
+                player["clan"] = {"id": clan.id, "name": clan.name, "tag": clan.tag,
+                                  "level": clan.level, "role": member.role}
+
         return web.json_response(player)
     except ValueError:
         return web.json_response({"error": "Invalid UID"}, status=400)
     except Exception as e:
         logger.error(f"Player detail error: {e}")
+        return web.json_response({"error": "Internal server error"}, status=500)
+
+
+async def handle_clan_bosses(request):
+    try:
+        bosses = await ClanBoss.objects.filter(status="active").all()
+        data = []
+        for cb in bosses:
+            clan = await Clan.objects.get_or_none(id=cb.clan_id)
+            data.append({
+                "id": cb.id,
+                "clan_id": cb.clan_id,
+                "clan_name": (clan.name + f" [{clan.tag}]") if clan else f"#{cb.clan_id}",
+                "level": cb.level,
+                "name": cb.name,
+                "hp": cb.hp,
+                "max_hp": cb.max_hp,
+                "hp_pct": round(cb.hp / cb.max_hp * 100, 1) if cb.max_hp else 0,
+                "spawned_at": cb.spawned_at,
+                "despawn_at": cb.despawn_at,
+            })
+        return web.json_response(data)
+    except Exception as e:
+        logger.error(f"Clan bosses API error: {e}")
+        return web.json_response({"error": "Internal server error"}, status=500)
+
+
+async def handle_raid_boss(request):
+    try:
+        boss = await RaidBoss.objects.filter(status="active").get_or_none()
+        if not boss:
+            return web.json_response({"active": False, "status": "none"})
+        top_hits = await database.fetch_all("""
+            SELECT r.player_uid, COALESCE(u.name, 'unknown') AS name,
+                   u.level, r.damage
+            FROM raid_boss_hits r
+            LEFT JOIN users u ON u.uid = r.player_uid
+            WHERE r.raid_boss_id = :bid
+            ORDER BY r.damage DESC
+            LIMIT 10
+        """, {"bid": boss.id})
+        return web.json_response({
+            "active": True,
+            "id": boss.id,
+            "level": boss.level,
+            "name": boss.name,
+            "hp": boss.hp,
+            "max_hp": boss.max_hp,
+            "hp_pct": round(boss.hp / boss.max_hp * 100, 1) if boss.max_hp else 0,
+            "spawned_at": boss.spawned_at,
+            "despawn_at": boss.despawn_at,
+            "top_hits": [
+                {"uid": r["player_uid"], "name": r["name"], "level": r["level"], "damage": r["damage"]}
+                for r in top_hits
+            ],
+        })
+    except Exception as e:
+        logger.error(f"Raid boss API error: {e}")
+        return web.json_response({"error": "Internal server error"}, status=500)
+
+
+async def handle_arena_top(request):
+    try:
+        rows = await database.fetch_all("""
+            SELECT
+                r.player_uid,
+                COALESCE(u.name, 'unknown') AS name,
+                u.level,
+                MAX(r.best_wave) AS best_wave
+            FROM arena_runs r
+            LEFT JOIN users u ON u.uid = r.player_uid
+            GROUP BY r.player_uid, u.name, u.level
+            ORDER BY best_wave DESC
+            LIMIT 50
+        """)
+        return web.json_response([
+            {"uid": r["player_uid"], "name": r["name"], "level": r["level"],
+             "best_wave": r["best_wave"]}
+            for r in rows
+        ])
+    except Exception as e:
+        logger.error(f"Arena top API error: {e}")
         return web.json_response({"error": "Internal server error"}, status=500)
 
 
@@ -254,14 +388,35 @@ async def handle_api_root(request):
             "/api/bot": "Bot status",
             "/api/players": "Player list (?search=name)",
             "/api/players/{uid}": "Player detail",
+            "/api/clan_bosses": "Active clan bosses",
+            "/api/raid_boss": "Active world raid boss",
+            "/api/arena/top": "Arena leaderboard by best wave",
         }
     })
 
 
 def setup_api_routes(app: web.Application):
     """Mount API routes on an aiohttp app."""
-    app.router.add_get("/api", handle_api_root)
-    app.router.add_get("/api/stats", handle_stats)
-    app.router.add_get("/api/bot", handle_bot_status)
-    app.router.add_get("/api/players", handle_players_list)
-    app.router.add_get("/api/players/{uid}", handle_player_detail)
+    app.router.add_get("/api", _requires_auth(handle_api_root))
+    app.router.add_get("/api/stats", _requires_auth(handle_stats))
+    app.router.add_get("/api/bot", _requires_auth(handle_bot_status))
+    app.router.add_get("/api/players", _requires_auth(handle_players_list))
+    app.router.add_get("/api/players/{uid}", _requires_auth(handle_player_detail))
+    app.router.add_get("/api/clan_bosses", _requires_auth(handle_clan_bosses))
+    app.router.add_get("/api/raid_boss", _requires_auth(handle_raid_boss))
+    app.router.add_get("/api/arena/top", _requires_auth(handle_arena_top))
+
+
+def _requires_auth(handler):
+    """Защита API-роутов Bearer-токеном, если задан API_TOKEN (иначе — без изменений)."""
+    token = os.getenv("API_TOKEN")
+    if not token:
+        return handler
+
+    async def wrapped(request):
+        auth = request.headers.get("Authorization", "")
+        if auth != f"Bearer {token}":
+            return web.json_response({"error": "Unauthorized"}, status=401)
+        return await handler(request)
+
+    return wrapped

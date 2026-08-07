@@ -23,6 +23,8 @@ def get_total_dps(player: Player) -> int:
     cls_bonus = get_class_bonus(player.job)
     if cls_bonus.get("dps_pct"):
         total = int(total * (1 + cls_bonus["dps_pct"] / 100))
+    from game.pets import pet_dps_mult
+    total = int(total * pet_dps_mult(player.uid))
     return total
 
 
@@ -164,7 +166,7 @@ async def challenge_opp(player: Player, opp: Optional[Player] = None) -> tuple[s
             swapped_slot = random.choice(WEAPON_SLOTS)
             p_item = getattr(player, swapped_slot)
             o_item = getattr(opp, swapped_slot)
-            if isinstance(p_item, dict) and isinstance(o_item, dict) and p_item["dps"] > o_item["dps"]:
+            if isinstance(p_item, dict) and isinstance(o_item, dict) and o_item["dps"] > p_item["dps"]:
                 setattr(player, swapped_slot, o_item)
                 setattr(opp, swapped_slot, p_item)
                 await player.update(_columns=[swapped_slot])
@@ -182,6 +184,10 @@ async def challenge_opp(player: Player, opp: Optional[Player] = None) -> tuple[s
         player.nextxp -= xp_reduction
         player.wins   += 1
         opp.loss      += 1
+
+        # Проигравший (opp) получает штраф XP независимо от порядка аргументов
+        opp.nextxp += nextval
+        opp.totalxplost += nextval
 
         # H1: apply healing/poison from dealt
         if p_dealt.healing > 0:
@@ -202,6 +208,10 @@ async def challenge_opp(player: Player, opp: Optional[Player] = None) -> tuple[s
             player.nextxp = max(player.currentxp + 1, player.nextxp - kill_xp_p)
             xp_reduction += kill_xp_p
 
+        player.gold += real_gold + kill_gold_p
+        p_gold_line = f"\n💰 Gold: +{real_gold + kill_gold_p}\n"
+        win_duel_progress_uid = player
+
         from plugins.monsters import invalidate_dps_cache, MonsterEncountersPlugin
         invalidate_dps_cache(player.uid)
         racial_aid = cfg.RACIAL_ACTIVE_SKILLS.get(player.race or "")
@@ -213,14 +223,14 @@ async def challenge_opp(player: Player, opp: Optional[Player] = None) -> tuple[s
                 "⚔️ *PVP Encounter!*\n\n"
                 "You [" + str(player_val) + "/" + str(player_max) + "] vs *" + opp.name + "* [" + str(opp_val) + "/" + str(opp_max) + "]\n\n"
                 "🏆 *YOU WIN!* Next level *" + ctime(xp_reduction, 'en') + "* faster!"
-                + steal_str_p + backstab_str_p
+                + p_gold_line + steal_str_p + backstab_str_p
             )
         else:
             msg_p = (
                 "⚔️ *PVP Встреча!*\n\n"
                 "Ты [" + str(player_val) + "/" + str(player_max) + "] vs *" + opp.name + "* [" + str(opp_val) + "/" + str(opp_max) + "]\n\n"
                 "🏆 *ТЫ ПОБЕДИЛ!* До следующего уровня на *" + ctime(xp_reduction, 'ru') + "* быстрее!"
-                + steal_str_p + backstab_str_p
+                + p_gold_line + steal_str_p + backstab_str_p
             )
 
         if o_lang == "en":
@@ -270,6 +280,9 @@ async def challenge_opp(player: Player, opp: Optional[Player] = None) -> tuple[s
             xp_reduction_o += kill_xp_o
 
         opp.nextxp = max(opp.currentxp + 1, opp.nextxp - xp_reduction_o)
+        opp.gold += real_gold + kill_gold_o
+        o_gold_line = f"\n💰 Gold: +{real_gold + kill_gold_o}\n"
+        win_duel_progress_uid = opp
 
         from plugins.monsters import invalidate_dps_cache, MonsterEncountersPlugin
         invalidate_dps_cache(opp.uid)
@@ -297,21 +310,20 @@ async def challenge_opp(player: Player, opp: Optional[Player] = None) -> tuple[s
                 "⚔️ *PVP Encounter!*\n\n"
                 "*" + player.name + "* [" + str(player_val) + "/" + str(player_max) + "] vs You [" + str(opp_val) + "/" + str(opp_max) + "]\n\n"
                 "🏆 *YOU WIN!* Next level *" + ctime(xp_reduction_o, 'en') + "* faster!"
-                + backstab_str_o
+                + o_gold_line + backstab_str_o
             )
         else:
             msg_o = (
                 "⚔️ *PVP Встреча!*\n\n"
                 "*" + player.name + "* [" + str(player_val) + "/" + str(player_max) + "] vs Ты [" + str(opp_val) + "/" + str(opp_max) + "]\n\n"
                 "🏆 *ТЫ ПОБЕДИЛ!* До следующего уровня на *" + ctime(xp_reduction_o, 'ru') + "* быстрее!"
-                + backstab_str_o
+                + o_gold_line + backstab_str_o
             )
 
-    await player.update(_columns=["nextxp", "totalxplost", "wins", "loss"])
-    await opp.update(_columns=["nextxp", "wins", "loss"])
+    await player.update(_columns=["nextxp", "totalxplost", "wins", "loss", "gold"])
+    await opp.update(_columns=["nextxp", "totalxplost", "wins", "loss", "gold"])
 
-    from handlers.quests import update_quest_progress
-    await update_quest_progress(player, "win_duel", 1)
-    await update_quest_progress(opp, "win_duel", 1)
+    from game.quests import on_duel_win
+    await on_duel_win(win_duel_progress_uid)
 
     return msg_p, msg_o

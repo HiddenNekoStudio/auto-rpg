@@ -188,6 +188,30 @@ header h1 span { color: #58a6ff; }
 .loading { text-align: center; padding: 40px; color: #8b949e; }
 .spinner { display: inline-block; width: 24px; height: 24px; border: 2px solid #30363d; border-top-color: #58a6ff; border-radius: 50%; animation: spin .8s linear infinite; }
 @keyframes spin { to { transform: rotate(360deg); } }
+
+/* World panel (clan bosses + arena top) */
+.world-panel {
+  margin: 0 24px 24px; background: #161b22; border: 1px solid #30363d;
+  border-radius: 8px; padding: 16px 20px;
+}
+.world-panel h3 {
+  font-size: 13px; text-transform: uppercase; letter-spacing: .5px;
+  color: #8b949e; margin-bottom: 10px; padding-bottom: 6px;
+  border-bottom: 1px solid #21262d;
+}
+.world-content { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 8px; }
+.world-card {
+  background: #0d1117; border: 1px solid #21262d; border-radius: 6px; padding: 10px 12px;
+}
+.world-card .wtitle { font-size: 13px; font-weight: 500; color: #c9d1d9; }
+.world-card .wsub { font-size: 11px; color: #8b949e; margin-top: 2px; }
+.world-card .wbar { height: 6px; border-radius: 3px; background: #30363d; margin-top: 6px; overflow: hidden; }
+.world-card .wbar > div { height: 100%; background: #f0883e; }
+.world-row { display: flex; justify-content: space-between; align-items: center; padding: 6px 0; border-bottom: 1px solid #21262d; font-size: 12px; }
+.world-row:last-child { border-bottom: none; }
+.world-row .wrank { color: #8b949e; min-width: 24px; }
+.world-row .wname { flex: 1; font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.world-row .wval { color: #bc8cff; font-weight: 600; font-variant-numeric: tabular-nums; }
 </style>
 </head>
 <body>
@@ -220,7 +244,11 @@ header h1 span { color: #58a6ff; }
   <div class="stat-card"><div class="label">Tokens</div><div class="value purple" id="stat-tokens">—</div></div>
   <div class="stat-card"><div class="label">Quests Done</div><div class="value blue" id="stat-quests">—</div></div>
   <div class="stat-card"><div class="label">Monster Kills</div><div class="value orange" id="stat-mkills">—</div></div>
-  <div class="stat-card"><div class="label">Boss Kills</div><div class="value red" id="stat-bkills">—</div></div>
+  <div class="stat-card"><div class="label">Bosses Defeated (unique)</div><div class="value red" id="stat-bkills">—</div></div>
+  <div class="stat-card"><div class="label">Pets</div><div class="value cyan" id="stat-pets">—</div></div>
+  <div class="stat-card"><div class="label">Dungeons Active</div><div class="value blue" id="stat-dungeons">—</div></div>
+  <div class="stat-card"><div class="label">Arena Runs Active</div><div class="value purple" id="stat-arenas">—</div></div>
+  <div class="stat-card"><div class="label">Clan Bosses Active</div><div class="value orange" id="stat-clanbosses">—</div></div>
   <div class="stat-card"><div class="label">Deaths</div><div class="value red" id="stat-deaths">—</div></div>
   <div class="stat-card"><div class="label">Total Online Time</div><div class="value green" id="stat-total-online">—</div></div>
   <div class="stat-card"><div class="label">Total Idle Time</div><div class="value gold" id="stat-total-idle">—</div></div>
@@ -243,6 +271,13 @@ header h1 span { color: #58a6ff; }
     <div class="detail-empty">Select a player</div>
   </div>
 </div>
+
+<section class="world-panel" id="world-panel">
+  <h3>🌍 World — Clan Bosses</h3>
+  <div id="clan-bosses" class="world-content">—</div>
+  <h3 style="margin-top:16px">⚔️ Arena Top 50</h3>
+  <div id="arena-top" class="world-content">—</div>
+</section>
 
 <script>
 // Formatting helpers
@@ -313,6 +348,10 @@ async function loadStats() {
     document.getElementById('stat-mkills').textContent = fmt(d.total_monster_kills);
     document.getElementById('stat-bkills').textContent = fmt(d.total_boss_kills);
     document.getElementById('stat-deaths').textContent = fmt(d.total_deaths);
+    document.getElementById('stat-pets').textContent = fmt(d.total_pets);
+    document.getElementById('stat-dungeons').textContent = fmt(d.active_dungeons);
+    document.getElementById('stat-arenas').textContent = fmt(d.active_arenas);
+    document.getElementById('stat-clanbosses').textContent = fmt(d.active_clan_bosses);
     document.getElementById('stat-total-online').textContent = fmtDuration(d.total_online_seconds_all);
     document.getElementById('stat-total-idle').textContent = fmtDuration(d.total_idle_seconds_all);
     document.getElementById('stat-total-offline').textContent = fmtDuration(d.total_offline_seconds_all);
@@ -384,9 +423,41 @@ function renderStatus(d) {
   }).join('');
 }
 
-// Load player list
-async function loadPlayers(search) {
+// Load world: clan bosses + arena top
+async function loadWorld() {
   try {
+    const cb = await fetchJSON('/api/clan_bosses');
+    const el = document.getElementById('clan-bosses');
+    if (!cb || cb.length === 0) {
+      el.innerHTML = '<div style="color:#8b949e;font-size:12px">No active clan bosses</div>';
+    } else {
+      el.innerHTML = cb.map(b => `
+        <div class="world-card">
+          <div class="wtitle">${esc(b.name)} <span style="color:#8b949e">Lv${b.level}</span></div>
+          <div class="wsub">${esc(b.clan_name)} · ${b.hp_pct}%</div>
+          <div class="wbar"><div style="width:${Math.max(0, b.hp_pct)}%"></div></div>
+        </div>`).join('');
+    }
+  } catch (e) { console.error('Clan bosses error:', e); }
+
+  try {
+    const top = await fetchJSON('/api/arena/top');
+    const el = document.getElementById('arena-top');
+    if (!top || top.length === 0) {
+      el.innerHTML = '<div style="color:#8b949e;font-size:12px">No arena runs yet</div>';
+    } else {
+      el.innerHTML = top.map((r, i) => `
+        <div class="world-row">
+          <span class="wrank">#${i + 1}</span>
+          <span class="wname">${esc(r.name)} <span style="color:#8b949e">Lv${r.level}</span></span>
+          <span class="wval">🌊 ${r.best_wave}</span>
+        </div>`).join('');
+    }
+  } catch (e) { console.error('Arena top error:', e); }
+}
+
+// Load player list
+async function loadPlayers(search) {  try {
     const url = search ? '/api/players?search=' + encodeURIComponent(search) : '/api/players';
     players = await fetchJSON(url);
     renderPlayerList();
@@ -527,6 +598,20 @@ function renderPlayerDetail(p, panel) {
       </div>
 
       <div class="section">
+        <h3>Pets</h3>
+        ${p.pets && p.pets.length ? renderPets(p.pets) : '<div style="color:#8b949e;font-size:12px">No pets</div>'}
+      </div>
+
+      <div class="section">
+        <h3>Dungeon / Arena</h3>
+        <div class="info-grid">
+          <div class="info-item"><div class="ilabel">Dungeon</div><div class="ivalue">${p.active_dungeon ? '🚪 ' + p.active_dungeon.dungeon_id + ' ' + p.active_dungeon.floor + '/' + p.active_dungeon.max_floor : '—'}</div></div>
+          <div class="info-item"><div class="ilabel">Arena Wave</div><div class="ivalue">${p.active_arena ? '🌊 ' + p.active_arena.wave : '—'}</div></div>
+          <div class="info-item"><div class="ilabel">Arena Best Wave</div><div class="ivalue purple">${p.arena_best_wave || 0}</div></div>
+        </div>
+      </div>
+
+      <div class="section">
         <h3>Quests</h3>
         <div class="info-grid">
           <div class="info-item"><div class="ilabel">Completed</div><div class="ivalue">${fmt(p.totalquests)}</div></div>
@@ -619,6 +704,16 @@ function renderActiveSkills(skills) {
   </div>`;
 }
 
+function renderPets(pets) {
+  return `<table class="data-table">
+    <thead><tr><th>Pet</th><th>Level</th><th>Equipped</th><th>Source</th></tr></thead>
+    <tbody>${pets.map(p => `<tr>
+      <td>${esc(p.pet_id)}</td><td>${p.level}</td>
+      <td>${p.equipped ? '✓' : '—'}</td><td>${esc(p.source || '')}</td>
+    </tr>`).join('')}</tbody>
+  </table>`;
+}
+
 function renderClan(clan) {
   return `<div class="section">
     <h3>Clan</h3>
@@ -651,8 +746,9 @@ document.getElementById('player-search').addEventListener('input', (e) => {
 // Init
 loadStatus();
 loadStats();
+loadWorld();
 loadPlayers();
-setInterval(() => { loadStats(); loadStatus(); }, 10000);
+setInterval(() => { loadStats(); loadStatus(); loadWorld(); }, 10000);
 </script>
 
 </body>

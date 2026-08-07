@@ -18,6 +18,7 @@ import config as cfg
 from db import Player, Quest
 from bot import ctime, send_to_players
 from game.events import randomevent
+from game.challenge import challenge_opp
 from data.locations import get_location_coords
 from handlers.quests import get_player_locked_quest
 from core.event_bus import (
@@ -37,6 +38,8 @@ _daily_quest_counter = 0  # для ежедневных квестов
 _boss_respawn_counter = 0  # для респауна боссов каждые 4 дня
 _quest_cleanup_counter = 0  # для очистки старых квестов
 _online_time_counter = 0  # для инкремента total_online_seconds каждый tick
+_pet_counter = 0  # для прокачки питомцев каждые PET_XP_INTERVAL
+_clan_boss_spawn_counter = 0  # для спавна клановых боссов каждые CLAN_BOSS_SPAWN_INTERVAL
 
 
 async def init_player_state():
@@ -72,9 +75,6 @@ async def levelup(bot, player: Player) -> None:
     player.level    += 1
     player.currentxp = 0
     player.nextxp    = cfg.xp_for_level(player.level)
-
-    from game.quests import on_level_reached
-    await on_level_reached(player, player.level)
 
     item, slot, replaced = await get_item(player)
 
@@ -232,7 +232,12 @@ async def main_loop(bot) -> None:
         locked_quest = await get_player_locked_quest(player)
         passives_changed = False
         old_x, old_y = player.x, player.y
-        
+
+        from plugins.vip_shop import get_speed_multiplier
+        boost = get_speed_multiplier(player)
+        move_r = round(1 * boost)
+        move_big = round(3 * boost)
+
         if locked_quest:
             target_loc_id = locked_quest.target_location_id
             target_x, target_y = await get_location_coords(target_loc_id)
@@ -241,29 +246,29 @@ async def main_loop(bot) -> None:
                 move_direction = random.choice(["north", "south", "east", "west"])
                 
                 if move_direction == "north" and player.y < target_y:
-                    player.y = min(player.y + 1, target_y)
+                    player.y = min(player.y + move_r, target_y)
                 elif move_direction == "south" and player.y > target_y:
-                    player.y = max(player.y - 1, target_y)
+                    player.y = max(player.y - move_r, target_y)
                 elif move_direction == "east" and player.x < target_x:
-                    player.x = min(player.x + 1, target_x)
+                    player.x = min(player.x + move_r, target_x)
                 elif move_direction == "west" and player.x > target_x:
-                    player.x = max(player.x - 1, target_x)
+                    player.x = max(player.x - move_r, target_x)
                 else:
                     move_roll = random.random()
                     if move_roll < 0.7:
-                        player.x = random.randint(player.x - 1, player.x + 1) % cfg.MAP_SIZE[0]
-                        player.y = random.randint(player.y - 1, player.y + 1) % cfg.MAP_SIZE[1]
+                        player.x = random.randint(player.x - move_r, player.x + move_r) % cfg.MAP_SIZE[0]
+                        player.y = random.randint(player.y - move_r, player.y + move_r) % cfg.MAP_SIZE[1]
                     else:
-                        player.x = random.randint(player.x - 3, player.x + 3) % cfg.MAP_SIZE[0]
-                        player.y = random.randint(player.y - 3, player.y + 3) % cfg.MAP_SIZE[1]
+                        player.x = random.randint(player.x - move_big, player.x + move_big) % cfg.MAP_SIZE[0]
+                        player.y = random.randint(player.y - move_big, player.y + move_big) % cfg.MAP_SIZE[1]
         else:
             move_roll = random.random()
             if move_roll < 0.7:
-                player.x = random.randint(player.x - 1, player.x + 1) % cfg.MAP_SIZE[0]
-                player.y = random.randint(player.y - 1, player.y + 1) % cfg.MAP_SIZE[1]
+                player.x = random.randint(player.x - move_r, player.x + move_r) % cfg.MAP_SIZE[0]
+                player.y = random.randint(player.y - move_r, player.y + move_r) % cfg.MAP_SIZE[1]
             else:
-                player.x = random.randint(player.x - 3, player.x + 3) % cfg.MAP_SIZE[0]
-                player.y = random.randint(player.y - 3, player.y + 3) % cfg.MAP_SIZE[1]
+                player.x = random.randint(player.x - move_big, player.x + move_big) % cfg.MAP_SIZE[0]
+                player.y = random.randint(player.y - move_big, player.y + move_big) % cfg.MAP_SIZE[1]
 
         if old_x != player.x or old_y != player.y:
             from handlers.quests import check_location_quests
@@ -385,8 +390,9 @@ async def main_loop(bot) -> None:
     # ── Респаун боссов: каждые 4 дня ──────────────────────
     if _boss_respawn_counter >= BOSS_RESPAWN_INTERVAL:
         _boss_respawn_counter = 0
-        from game.bosses import check_and_spawn_bosses
+        from game.bosses import check_and_spawn_bosses, check_boss_despawn
         await check_and_spawn_bosses(bot)
+        await check_boss_despawn(bot)
         logging.info("Респаун боссов выполнен")
 
     # ── PVP встреча на карте ──────────────────────
@@ -595,6 +601,101 @@ async def global_event(bot, players: list) -> None:
         await send_to_players(bot, msg, player_uids=[uid])
 
 
+async def hunting_loop(bot) -> None:
+    """Тик охоты — симуляция боёв для активных охотников."""
+    hunters = await Player.objects.filter(
+        online=True, hunting_expires_at__gt=0
+    ).all()
+    if not hunters:
+        return
+    from game.hunting import process_hunting_tick
+    for p in hunters:
+        try:
+            await process_hunting_tick(bot, p)
+        except Exception as e:
+            logging.error(f"Hunting tick error uid={p.uid}: {e}")
+
+
+async def pet_loop(bot) -> None:
+    """Тик питомцев — прокачка XP и обновление бонусов активных игроков."""
+    global _pet_counter
+    _pet_counter += cfg.INTERVAL
+    if _pet_counter < cfg.PET_XP_INTERVAL:
+        return
+    _pet_counter = 0
+    from game.pets import refresh_cache, add_pet_xp
+    players = await Player.objects.filter(online=True).all()
+    for p in players:
+        try:
+            await refresh_cache(p)
+            await add_pet_xp(p, cfg.PET_XP_PER_TICK)
+        except Exception as e:
+            logging.error(f"Pet tick error uid={p.uid}: {e}")
+
+
+async def clan_boss_loop(bot) -> None:
+    """Тик клановых боссов — спавн, авто-вклад урона, победа/деспаун."""
+    global _clan_boss_spawn_counter
+    from game.clan_bosses import spawn_for_clans, tick
+    try:
+        await tick(bot)
+    except Exception as e:
+        logging.error("clan_boss tick error: %s", e, exc_info=True)
+    _clan_boss_spawn_counter += cfg.INTERVAL
+    if _clan_boss_spawn_counter < cfg.CLAN_BOSS_SPAWN_INTERVAL:
+        return
+    _clan_boss_spawn_counter = 0
+    try:
+        spawned = await spawn_for_clans()
+        if spawned:
+            logging.info("Spawned %d clan bosses", spawned)
+    except Exception as e:
+        logging.error("clan_boss spawn error: %s", e, exc_info=True)
+
+
+async def raid_boss_loop(bot) -> None:
+    """Тик мирового рейд-босса — спавн, авто-вклад урона, победа/деспаун."""
+    from game.raid_boss import tick
+    try:
+        await tick(bot)
+    except Exception as e:
+        logging.error("raid_boss tick error: %s", e, exc_info=True)
+
+
+async def dungeon_loop(bot) -> None:
+    """Тик подземелий — авто-бой за комнату для активных забегов."""
+    from db import DungeonRun
+    runs = await DungeonRun.objects.filter(status="active").all()
+    if not runs:
+        return
+    from game.dungeons import process_dungeon_tick
+    for run in runs:
+        player = await Player.objects.get_or_none(uid=run.player_uid)
+        if not player or not player.online:
+            continue
+        try:
+            await process_dungeon_tick(bot, player, run)
+        except Exception as e:
+            logging.error(f"Dungeon tick error uid={player.uid}: {e}")
+
+
+async def arena_loop(bot) -> None:
+    """Тик арены — авто-бой за волну для активных забегов."""
+    from db import ArenaRun
+    runs = await ArenaRun.objects.filter(status="active").all()
+    if not runs:
+        return
+    from game.arena import process_arena_tick
+    for run in runs:
+        player = await Player.objects.get_or_none(uid=run.player_uid)
+        if not player or not player.online:
+            continue
+        try:
+            await process_arena_tick(bot, player, run)
+        except Exception as e:
+            logging.error(f"Arena tick error uid={player.uid}: {e}")
+
+
 async def run_loops(app: Application) -> None:
     """Запускает все игровые циклы в бесконечном loop.
 
@@ -614,6 +715,30 @@ async def run_loops(app: Application) -> None:
             await quest_loop(bot)
         except Exception as e:
             logging.error("quest_loop error: %s", e, exc_info=True)
+        try:
+            await hunting_loop(bot)
+        except Exception as e:
+            logging.error("hunting_loop error: %s", e, exc_info=True)
+        try:
+            await pet_loop(bot)
+        except Exception as e:
+            logging.error("pet_loop error: %s", e, exc_info=True)
+        try:
+            await clan_boss_loop(bot)
+        except Exception as e:
+            logging.error("clan_boss_loop error: %s", e, exc_info=True)
+        try:
+            await raid_boss_loop(bot)
+        except Exception as e:
+            logging.error("raid_boss_loop error: %s", e, exc_info=True)
+        try:
+            await dungeon_loop(bot)
+        except Exception as e:
+            logging.error("dungeon_loop error: %s", e, exc_info=True)
+        try:
+            await arena_loop(bot)
+        except Exception as e:
+            logging.error("arena_loop error: %s", e, exc_info=True)
         await asyncio.sleep(cfg.INTERVAL)
 
 

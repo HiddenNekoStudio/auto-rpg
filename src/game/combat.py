@@ -84,6 +84,78 @@ def create_combat_unit_from_player(player: Player, dps: int) -> CombatUnit:
     )
 
 
+def monster_lifesteal(monster) -> float:
+    """Доля урона монстра, возвращаемая ему как HP (0.0 = без вампиризма).
+    Принимает объект монстра (с .id или ._id) или dict (с "id")."""
+    mid = None
+    if isinstance(monster, dict):
+        mid = monster.get("id") or monster.get("_id")
+    else:
+        mid = getattr(monster, "id", None) or getattr(monster, "_id", None)
+    if not mid:
+        return 0.0
+    return cfg.MONSTER_LIFESTEAL.get(mid, 0.0)
+
+
+# ── Элементы и слабости ─────────────────────────────
+def _monster_type(monster) -> str:
+    """Тип монстра (animal/undead/...) из объекта или dict."""
+    if isinstance(monster, dict):
+        if monster.get("type"):
+            return monster["type"]
+        mid = monster.get("id") or monster.get("_id")
+    else:
+        mid = getattr(monster, "id", None) or getattr(monster, "_id", None)
+    if not mid:
+        return ""
+    from core.monsters import monster_config_type
+    return monster_config_type(mid)
+
+
+def monster_element(monster) -> str:
+    """Элемент монстра по его типу ("" если неопределён)."""
+    mtype = _monster_type(monster)
+    return cfg.MONSTER_TYPE_ELEMENT.get(mtype, "")
+
+
+def weakness_mult(weapon_element: str, monster) -> float:
+    """Множитель урона: 1.5 если элемент оружия бьёт монстра по слабости."""
+    if not weapon_element:
+        return 1.0
+    weak_types = cfg.ELEMENT_WEAKNESS.get(weapon_element, [])
+    if _monster_type(monster) in weak_types:
+        return cfg.ELEMENT_WEAK_MULT
+    return 1.0
+
+
+# ── Фьюри (шкала ярости) ─────────────────────────────
+# In-memory по uid: ярость — временное боевое состояние, теряется при оффлайне.
+_fury: dict[int, int] = {}
+
+
+def get_fury(uid: int) -> int:
+    return _fury.get(uid, 0)
+
+
+def add_fury(uid: int, amount: int) -> int:
+    """Начислить ярость. Возвращает новое значение."""
+    _fury[uid] = min(100, get_fury(uid) + max(0, amount))
+    return _fury[uid]
+
+
+def reset_fury(uid: int, loss_pct: int = 0) -> int:
+    """Сбросить ярость (ульт/смерть). При смерти теряется только доля."""
+    if loss_pct > 0:
+        _fury[uid] = int(get_fury(uid) * (100 - loss_pct) / 100)
+    else:
+        _fury[uid] = 0
+    return _fury[uid]
+
+
+def fury_ult_mult() -> float:
+    return cfg.FURY_ULT_MULT
+
+
 async def process_player_heal_skill(
     player: CombatUnit,
     skill_id: str,

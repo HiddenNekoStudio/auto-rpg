@@ -12,6 +12,7 @@ from aiohttp import web, ClientSession, ClientConnectorError
 
 API_URL = os.getenv("API_URL", "http://localhost:8081")
 COMPOSE_PROJECT = os.getenv("COMPOSE_PROJECT_NAME", "tg_autorpg")
+_API_TOKEN = os.getenv("API_TOKEN")
 DOCKER_SOCK = "/var/run/docker.sock"
 logging.basicConfig(level=logging.INFO)
 log = logging.getLogger("monitor")
@@ -19,10 +20,11 @@ log = logging.getLogger("monitor")
 
 async def _fetch_json(url):
     last_exc = None
+    headers = {"Authorization": f"Bearer {_API_TOKEN}"} if _API_TOKEN else None
     for attempt in range(1, 4):
         try:
             async with ClientSession() as session:
-                async with session.get(url, timeout=aiohttp.ClientTimeout(total=5)) as resp:
+                async with session.get(url, headers=headers, timeout=aiohttp.ClientTimeout(total=5)) as resp:
                     body = await resp.json(content_type=None)
                     return resp.status, body
         except (ClientConnectorError, OSError, asyncio.TimeoutError) as exc:
@@ -51,6 +53,16 @@ async def proxy_player_detail(request):
     status, data = await _fetch_json(f"{API_URL}/api/players/{uid}")
     if status == 404:
         return web.json_response({"error": "Player not found"}, status=404)
+    return web.json_response(data, status=status)
+
+
+async def proxy_clan_bosses(request):
+    status, data = await _fetch_json(f"{API_URL}/api/clan_bosses")
+    return web.json_response(data, status=status)
+
+
+async def proxy_arena_top(request):
+    status, data = await _fetch_json(f"{API_URL}/api/arena/top")
     return web.json_response(data, status=status)
 
 
@@ -224,6 +236,8 @@ async def handle_api_root(request):
             "/api/status": "Bot + container status",
             "/api/players": "Player list (?search=name)",
             "/api/players/{uid}": "Player detail",
+            "/api/clan_bosses": "Active clan bosses",
+            "/api/arena/top": "Arena leaderboard by best wave",
         }
     })
 
@@ -235,6 +249,8 @@ def main():
     app.router.add_get("/api/status", handle_status)
     app.router.add_get("/api/players", proxy_players)
     app.router.add_get("/api/players/{uid}", proxy_player_detail)
+    app.router.add_get("/api/clan_bosses", proxy_clan_bosses)
+    app.router.add_get("/api/arena/top", proxy_arena_top)
     app.router.add_static("/", path="./static", show_index=True)
 
     port = int(os.getenv("PORT", "8082"))

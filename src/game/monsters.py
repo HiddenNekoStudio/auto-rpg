@@ -58,13 +58,20 @@ def get_total_dps(player: Player, use_cache: bool = True) -> int:
     if cls_bonus.get("dps_pct"):
         total = int(total * (1 + cls_bonus["dps_pct"] / 100))
 
+    # Сетовые бонусы
+    total = int(total * (1 + player._get_set_sum("dps_pct") / 100))
+
+    # Камни в гнёздах
+    from game.gems import get_socket_bonuses_sync
+    total = int(total * (1 + get_socket_bonuses_sync(player)["dps_pct"] / 100))
+
     _dps_cache.set(cache_key, total)
     return total
 
 
 def invalidate_dps_cache(uid: int) -> None:
     """Инвалидирует кэш DPS при смене снаряжения."""
-    _dps_cache.delete(str(uid))
+    _dps_cache.delete(uid)
 
 
 async def encounter_one(bot: Bot, player: Player, monster: str, monster_level: int) -> None:
@@ -291,8 +298,12 @@ async def encounter_one(bot: Bot, player: Player, monster: str, monster_level: i
                 ])
         else:
             player.monster_deaths = (player.monster_deaths or 0) + 1
-            player.nextxp += val
-            player.totalxplost += val
+
+            from plugins.vip_shop import has_active_protect
+            protect_active = has_active_protect(player)
+            if not protect_active:
+                player.nextxp += val
+                player.totalxplost += val
 
             round_lines = []
             for r in rounds:
@@ -310,6 +321,11 @@ async def encounter_one(bot: Bot, player: Player, monster: str, monster_level: i
             rounds_str = "\n".join(round_lines[:10])
 
             if lang == "en":
+                penalty_line = (
+                    "🛡️ *PROTECT!* Penalty cancelled!"
+                    if protect_active else
+                    f"💀 *MONSTER WINS!* Penalty +{ctime(val, lang)} to level {player.level + 1}."
+                )
                 msg = "\n".join([
                     "⚔️ *Monster Encounter!*",
                     f"  👤 *{player.name}* vs 👹 *{monster}* (Lv.{monster_level})",
@@ -318,10 +334,15 @@ async def encounter_one(bot: Bot, player: Player, monster: str, monster_level: i
                     f"━━━ Rounds {len(rounds)} ━━━",
                     rounds_str,
                     "",
-                     f"💀 *MONSTER WINS!* Penalty +{ctime(val, lang)} to level {player.level + 1}.",
+                    penalty_line,
                      f"Next level in: *{ctime(player.nextxp - player.currentxp, lang)}*",
                 ])
             else:
+                penalty_line = (
+                    "🛡️ *ЗАЩИТА!* Штраф отменён!"
+                    if protect_active else
+                    f"💀 *МОНСТР ПОБЕДИЛ!* Штраф +{ctime(val, lang)} к уровню {player.level + 1}."
+                )
                 msg = "\n".join([
                     "⚔️ *Встреча с монстром!*",
                     f"  👤 *{player.name}* vs 👹 *{monster}* (Ур.{monster_level})",
@@ -330,7 +351,7 @@ async def encounter_one(bot: Bot, player: Player, monster: str, monster_level: i
                     f"━━━ Раунды ({len(rounds)}) ━━━",
                     rounds_str,
                     "",
-                     f"💀 *МОНСТР ПОБЕДИЛ!* Штраф +{ctime(val, lang)} к уровню {player.level + 1}.",
+                    penalty_line,
                      f"До след. уровня: *{ctime(player.nextxp - player.currentxp, lang)}*",
                 ])
 
@@ -338,22 +359,24 @@ async def encounter_one(bot: Bot, player: Player, monster: str, monster_level: i
 
     await player.update(_columns=["nextxp", "totalxplost", "gold", "hp", "monster_kills", "monster_deaths"])
 
-    from handlers.quests import update_quest_progress
-    await update_quest_progress(player, "kill_monster", 1)
-
     from game.quests import on_win_streak, on_death
     if player_won:
         await on_win_streak(player, _win_streak.get(player.uid, 1))
+        # NEW QUEST SYSTEM
+        try:
+            from game.quests import on_monster_defeated
+            await on_monster_defeated(player, monster)
+        except Exception as e:
+            import logging
+            logging.error(f"Quest progress error: {e}")
+        try:
+            from core.loot import maybe_drop_gem
+            await maybe_drop_gem(player.uid)
+        except Exception as e:
+            import logging
+            logging.error(f"Gem drop error: {e}")
     else:
         await on_death(player)
-    
-    # NEW QUEST SYSTEM
-    try:
-        from game.quests import on_monster_defeated
-        await on_monster_defeated(player, monster)
-    except Exception as e:
-        import logging
-        logging.error(f"Quest progress error: {e}")
     
     await send_to_players(bot, msg, player_uids=[player.uid])
 

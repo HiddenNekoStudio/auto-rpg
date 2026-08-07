@@ -7,6 +7,9 @@ core/loot.py — Генератор предметов (чистая логик�
 import math
 import random
 from typing import Optional
+from pathlib import Path
+
+import config
 
 
 # ─────────────────────────────────────────────
@@ -207,6 +210,37 @@ RARITY_MULT = {
 # Core функции
 # ─────────────────────────────────────────────
 
+import json
+
+_SETS_CACHE: dict | None = None
+
+
+def _load_sets() -> dict:
+    """Загрузить конфиг сетовых наборов (data/sets.json)."""
+    global _SETS_CACHE
+    if _SETS_CACHE is None:
+        try:
+            path = Path(__file__).resolve().parent.parent / "data" / "sets.json"
+            _SETS_CACHE = json.loads(path.read_text()).get("sets", {})
+        except Exception:
+            _SETS_CACHE = {}
+    return _SETS_CACHE
+
+
+def get_set_config(set_id: str) -> dict | None:
+    return _load_sets().get(set_id)
+
+
+def get_set_bonus(set_id: str, piece_count: int) -> dict:
+    """Бонус набора за piece_count предметов (2/4/6). Пусто если нет порога."""
+    conf = get_set_config(set_id) or {}
+    best = {}
+    for threshold in (2, 4, 6):
+        if piece_count >= threshold:
+            best = conf.get("bonuses", {}).get(str(threshold), {})
+    return best
+
+
 def _weighted_choice(items: list, rng: random.Random | None = None) -> dict:
     """Выбрать случайный предмет из списка с учётом весов."""
     rng = rng or random
@@ -259,6 +293,22 @@ def generate_item_data(
     suffix = _weighted_choice(SUFFIXES, rng)
     quality = _weighted_choice(QUALITIES, rng)
     condition = _weighted_choice(CONDITIONS, rng)
+
+    element = None
+    if slot_name == "weapon" and rng.random() < config.ELEMENT_AFFIX_CHANCE:
+        element = rng.choice(list(config.ELEMENT_NAMES_RU.keys()))
+
+    set_id = None
+    if rng.random() < config.SET_AFFIX_CHANCE:
+        sets = _load_sets()
+        for sid, sconf in sets.items():
+            if slot_name in sconf.get("items", []):
+                set_id = sid
+                break
+
+    sockets = 0
+    if rng.random() < config.GEM_SOCKET_CHANCE:
+        sockets = rng.randint(1, config.GEM_MAX_SOCKETS)
     
     quality_rank = quality.get("rank", 0)
     condition_rank = condition.get("rank", 0)
@@ -320,6 +370,10 @@ def generate_item_data(
         "rank": rank,
         "flair": flair,
         "flair_en": base.get("flair_en", flair),
+        "element": element,
+        "set": set_id,
+        "sockets": sockets,
+        "socketed": [None] * sockets,
     }
 
 
@@ -340,6 +394,19 @@ def is_rare_drop(item: dict) -> bool:
     return item.get("rank") in ("Rare", "Epic", "Legendary", "Ascended")
 
 
+async def maybe_drop_gem(player_uid: int) -> str | None:
+    """Шанс дропа камня в инвентарь игрока. Возвращает gem_id или None."""
+    if random.random() > config.GEM_DROP_CHANCE:
+        return None
+    from game.gems import random_gem
+    from db import PlayerGem
+    gem_id = random_gem()
+    if not gem_id:
+        return None
+    await PlayerGem.objects.create(player_uid=player_uid, gem_id=gem_id)
+    return gem_id
+
+
 __all__ = [
     "CONDITIONS",
     "QUALITIES",
@@ -352,4 +419,5 @@ __all__ = [
     "is_item_better",
     "get_random_slot",
     "is_rare_drop",
+    "maybe_drop_gem",
 ]

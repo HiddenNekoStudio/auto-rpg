@@ -67,7 +67,7 @@ class TestUserRegistrationFlow:
         context.args = []
         
         # Мок БД
-        with patch('handlers.user.Player.objects') as mock_objects:
+        with patch('handlers.user.Player') as MockPlayer:
             mock_player = MagicMock()
             mock_player.name = "NewPlayer"
             mock_player.lang = ""
@@ -77,7 +77,7 @@ class TestUserRegistrationFlow:
             mock_player.nextxp = 600
             mock_player.tokens = 0
             
-            mock_objects.get_or_create = AsyncMock(return_value=(mock_player, True))
+            MockPlayer.objects.get_or_create = AsyncMock(return_value=(mock_player, True))
             
             # Выполняем
             try:
@@ -87,7 +87,7 @@ class TestUserRegistrationFlow:
                 pass
             
             # Проверяем, что пытались получить/создать игрока
-            mock_objects.get_or_create.assert_called()
+            MockPlayer.objects.get_or_create.assert_called()
 
     @pytest.mark.asyncio
     async def test_start_command_existing_user(self):
@@ -99,7 +99,7 @@ class TestUserRegistrationFlow:
         context = MagicMock()
         context.args = []
         
-        with patch('handlers.user.Player.objects') as mock_objects:
+        with patch('handlers.user.Player') as MockPlayer:
             mock_player = MagicMock()
             mock_player.name = "ExistingPlayer"
             mock_player.lang = "ru"
@@ -109,14 +109,14 @@ class TestUserRegistrationFlow:
             mock_player.nextxp = 600
             mock_player.tokens = 3
             
-            mock_objects.get_or_create = AsyncMock(return_value=(mock_player, False))
+            MockPlayer.objects.get_or_create = AsyncMock(return_value=(mock_player, False))
             
             try:
                 await cmd_start(update, context)
             except Exception:
                 pass
             
-            mock_objects.get_or_create.assert_called()
+            MockPlayer.objects.get_or_create.assert_called()
 
 
 class TestLanguageSelection:
@@ -132,12 +132,12 @@ class TestLanguageSelection:
         update.callback_query = create_mock_callback_query("set_lang_ru", mock_user)
         context = MagicMock()
         
-        with patch('handlers.user.Player.objects') as mock_objects:
+        with patch('handlers.user.Player') as MockPlayer:
             mock_player = MagicMock()
             mock_player.lang = ""
             mock_player.race = ""
             
-            mock_objects.get_or_create = AsyncMock(return_value=(mock_player, False))
+            MockPlayer.objects.get_or_create = AsyncMock(return_value=(mock_player, False))
             
             try:
                 await callback_set_lang(update, context)
@@ -145,31 +145,31 @@ class TestLanguageSelection:
                 pass
             
             # Проверяем, что пытались обновить lang
-            mock_objects.get_or_create.assert_called()
+            MockPlayer.objects.get_or_create.assert_called()
 
     @pytest.mark.asyncio
     async def test_callback_set_lang_en(self):
         """callback: set_lang_en -> установить английский"""
         from handlers.user import callback_set_lang
         
-        mock_user = create_mock_user()
+        mock_user = create_mock_user(uid=54321)
         update = MagicMock()
         update.callback_query = create_mock_callback_query("set_lang_en", mock_user)
         context = MagicMock()
         
-        with patch('handlers.user.Player.objects') as mock_objects:
+        with patch('handlers.user.Player') as MockPlayer:
             mock_player = MagicMock()
             mock_player.lang = ""
             mock_player.race = "human"  # Уже выбрана раса
             
-            mock_objects.get_or_create = AsyncMock(return_value=(mock_player, False))
+            MockPlayer.objects.get_or_create = AsyncMock(return_value=(mock_player, False))
             
             try:
                 await callback_set_lang(update, context)
             except Exception:
                 pass
             
-            mock_objects.get_or_create.assert_called()
+            MockPlayer.objects.get_or_create.assert_called()
 
 
 class TestRaceSelection:
@@ -185,20 +185,20 @@ class TestRaceSelection:
         update.callback_query = create_mock_callback_query("set_race_human", mock_user)
         context = MagicMock()
         
-        with patch('handlers.user.Player.objects') as mock_objects:
+        with patch('handlers.user.Player') as MockPlayer:
             mock_player = MagicMock()
             mock_player.race = ""
             mock_player.lang = "ru"
             mock_player.name = "TestPlayer"
             
-            mock_objects.get_or_none = AsyncMock(return_value=mock_player)
+            MockPlayer.objects.get_or_none = AsyncMock(return_value=mock_player)
             
             try:
                 await callback_set_race(update, context)
             except Exception:
                 pass
             
-            mock_objects.get_or_none.assert_called()
+            MockPlayer.objects.get_or_none.assert_called()
 
 
 class TestProfileCommand:
@@ -213,7 +213,7 @@ class TestProfileCommand:
         update = create_mock_update("/profile", mock_user)
         context = MagicMock()
         
-        with patch('handlers.user.Player.objects') as mock_objects:
+        with patch('handlers.user.Player') as MockPlayer:
             mock_player = MagicMock()
             mock_player.name = "TestPlayer"
             mock_player.lang = "ru"
@@ -241,14 +241,14 @@ class TestProfileCommand:
             mock_player.wins = 0
             mock_player.loss = 0
             
-            mock_objects.get_or_none = AsyncMock(return_value=mock_player)
+            MockPlayer.objects.get_or_none = AsyncMock(return_value=mock_player)
             
             try:
                 await cmd_profile(update, context)
             except Exception:
                 pass
             
-            mock_objects.get_or_none.assert_called()
+            MockPlayer.objects.get_or_none.assert_called()
 
 
 class TestPullCommand:
@@ -264,17 +264,15 @@ class TestPullCommand:
         context = MagicMock()
         context.args = []
         
-        with patch('handlers.user.Player.objects') as mock_objects, \
-             patch('handlers.user.get_item') as mock_get_item:
+        mock_item = {"name": "Меч", "quality": "Базовый", "condition": "Пыльный", "prefix": "", "suffix": "", "dps": 25, "rank": "Common", "flair": None}
+        with patch('handlers.user.Player') as MockPlayer, \
+             patch('handlers.user.get_item', new=AsyncMock(return_value=(mock_item, "weapon", True))):
             mock_player = MagicMock()
             mock_player.name = "TestPlayer"
             mock_player.lang = "ru"
             mock_player.tokens = 5
             
-            mock_item = {"name": "Меч", "quality": "Базовый", "condition": "Пыльный", "prefix": "", "suffix": "", "dps": 25, "rank": "Common", "flair": None}
-            mock_get_item = AsyncMock(return_value=(mock_item, "weapon", True))
-            
-            mock_objects.get_or_none = AsyncMock(return_value=mock_player)
+            MockPlayer.objects.get_or_none = AsyncMock(return_value=mock_player)
             
             try:
                 await cmd_pull(update, context)
@@ -291,13 +289,13 @@ class TestPullCommand:
         context = MagicMock()
         context.args = []
         
-        with patch('handlers.user.Player.objects') as mock_objects:
+        with patch('handlers.user.Player') as MockPlayer:
             mock_player = MagicMock()
             mock_player.name = "TestPlayer"
             mock_player.lang = "ru"
             mock_player.tokens = 0
             
-            mock_objects.get_or_none = AsyncMock(return_value=mock_player)
+            MockPlayer.objects.get_or_none = AsyncMock(return_value=mock_player)
             
             try:
                 await cmd_pull(update, context)
@@ -305,7 +303,7 @@ class TestPullCommand:
                 pass
             
             # Проверяем, что получили игрока
-            mock_objects.get_or_none.assert_called()
+            MockPlayer.objects.get_or_none.assert_called()
 
 
 class TestAlignmentFlow:
@@ -320,12 +318,12 @@ class TestAlignmentFlow:
         update = create_mock_update("/align", mock_user)
         context = MagicMock()
         
-        with patch('handlers.alignment.Player.objects') as mock_objects:
+        with patch('handlers.alignment.Player') as MockPlayer:
             mock_player = MagicMock()
             mock_player.lang = "ru"
             mock_player.align = 0
             
-            mock_objects.get_or_none = AsyncMock(return_value=mock_player)
+            MockPlayer.objects.get_or_none = AsyncMock(return_value=mock_player)
             
             try:
                 await cmd_align(update, context)
@@ -342,12 +340,12 @@ class TestAlignmentFlow:
         update.callback_query = create_mock_callback_query("align_1", mock_user)
         context = MagicMock()
         
-        with patch('handlers.alignment.Player.objects') as mock_objects:
+        with patch('handlers.alignment.Player') as MockPlayer:
             mock_player = MagicMock()
             mock_player.lang = "ru"
             mock_player.align = 0
             
-            mock_objects.get_or_none = AsyncMock(return_value=mock_player)
+            MockPlayer.objects.get_or_none = AsyncMock(return_value=mock_player)
             
             try:
                 await callback_align(update, context)
@@ -377,7 +375,7 @@ class TestTopCommand:
         update = create_mock_update("/top", mock_user)
         context = MagicMock()
         
-        with patch('handlers.user.Player.objects') as mock_objects:
+        with patch('handlers.user.Player') as MockPlayer:
             mock_player = MagicMock()
             mock_player.lang = "ru"
             
@@ -386,8 +384,8 @@ class TestTopCommand:
                 MagicMock(name="Player2", level=5, totalxp=5000, online=False, job="Маг", align=0),
             ]
             
-            mock_objects.all = AsyncMock(return_value=mock_players)
-            mock_objects.get_or_none = AsyncMock(return_value=mock_player)
+            MockPlayer.objects.all = AsyncMock(return_value=mock_players)
+            MockPlayer.objects.get_or_none = AsyncMock(return_value=mock_player)
             
             try:
                 await cmd_top(update, context)
@@ -409,12 +407,12 @@ class TestErrorHandling:
         update = create_mock_update("/profile", mock_user)
         context = MagicMock()
         
-        with patch('handlers.user.Player.objects') as mock_objects:
-            mock_objects.get_or_none = AsyncMock(return_value=None)
+        with patch('handlers.user.Player') as MockPlayer:
+            MockPlayer.objects.get_or_none = AsyncMock(return_value=None)
             
             # Должно вернуть "not_registered"
             # Проверяем логику
-            result = mock_objects.get_or_none(uid=99999)
+            result = await MockPlayer.objects.get_or_none(uid=99999)
             assert result is None
 
 
@@ -426,19 +424,9 @@ class TestMiddleware:
     @pytest.mark.asyncio
     async def test_update_activity_sets_online(self):
         """Middleware должно устанавливать online=True"""
-        import datetime as _dt
-        from bot import update_activity
-        
-        # Эта функция определена в bot.py
-        mock_user = create_mock_user()
-        update = MagicMock()
-        update.effective_user = mock_user
-        context = MagicMock()
-        
-        # Need to check if function exists
-        # It should be defined in bot.py
         import bot
-        assert hasattr(bot, 'update_activity') or True  # May be defined in main() context
+        # update_activity объявлена внутри main() — проверяем наличие в исходнике
+        assert 'def update_activity' in open(bot.__file__).read()
 
 
 # --- Тесты лута ---
@@ -449,16 +437,17 @@ class TestLootGeneration:
     @pytest.mark.asyncio
     async def test_get_item_returns_valid(self):
         """get_item возвращает валидный предмет"""
-        from loot import get_item, Slots
+        from loot import get_item
         
         mock_player = MagicMock()
         mock_player.level = 1
         mock_player.weapon = None
         
+        valid_slots = ["weapon", "shield", "helmet", "chest", "gloves", "boots", "ring", "amulet"]
         try:
             item, slot, replaced = await get_item(mock_player)
             assert item is not None
-            assert slot in [s.name for s in Slots]
+            assert slot in valid_slots
         except Exception:
             pass  # May fail due to DB mocking
 

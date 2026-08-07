@@ -100,6 +100,13 @@ async def handle_monster_defeated(event: GameEvent) -> None:
 
 async def handle_gold_changed(event: GameEvent) -> None:
     """Обработка изменения золота."""
+    try:
+        from game.achievements import on_gold_changed
+        await on_gold_changed(event.player_uid, event.data.get("amount", 0))
+    except Exception:
+        import logging
+        logging.exception("achievements on gold error")
+
     if not _bot:
         return
 

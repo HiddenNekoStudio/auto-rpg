@@ -157,14 +157,14 @@ class MonsterFactory:
 
 class Monster(IMonster):
     """Реализация монстра из конфига"""
-    __slots__ = ('_id', '_level', '_name_ru', '_name_en', '_dps', '_xp', '_rank', '_variant')
+    __slots__ = ('_id', '_level', '_name_ru', '_name_en', '_dps', '_xp', '_rank', '_variant', '_is_party')
     
     def __init__(self, monster_id: str, player_level: int, 
                  name_ru: str, name_en: str,
                  level_mult: float, dps_mult: float, 
                  xp_mult: float, rank: str, variant: str = "normal"):
         self._id = monster_id
-        self._level = int(player_level * level_mult)
+        self._level = max(1, int(player_level * level_mult))
         self._name_ru = name_ru
         self._name_en = name_en
         self._dps = int(player_level * 10 * dps_mult)

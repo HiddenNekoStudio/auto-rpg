@@ -101,26 +101,8 @@ async def callback_boss_leave(update: Update, context: ContextTypes.DEFAULT_TYPE
         pass
 
 
-async def cmd_bosses(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Список боссов — /bosses"""
-    user = update.effective_user
-    player = await Player.objects.get_or_none(uid=user.id)
-    if not player:
-        await update.message.reply_text(t("ru", "not_registered"))
-        return
-    
-    lang = player.lang or "ru"
-    
-    from game.bosses import format_boss_list as boss_list
-    text = await boss_list(lang)
-    
-    await update.message.reply_text(text, parse_mode="HTML")
-
-
 def register_handlers(app):
     """Регистрация обработчиков боссов."""
     app.add_handler(CallbackQueryHandler(callback_boss_fight, pattern="^boss_fight_"))
     app.add_handler(CallbackQueryHandler(callback_boss_leave, pattern="^boss_leave_"))
-    from telegram.ext import CommandHandler
-    app.add_handler(CommandHandler("bosses", cmd_bosses))
     logging.info("Boss handlers registered")

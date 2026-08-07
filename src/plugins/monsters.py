@@ -8,6 +8,7 @@ Features:
 - Party monsters: rare strong monsters with nearby-player bonus
 - Regional bonuses: XP/Gold multipliers by location type
 """
+import json
 import logging
 import random
 import time
@@ -21,6 +22,9 @@ from core.cache import TTLCache
 from core.monsters import monster_list, monster_list_en
 from plugins.base import GamePlugin, PluginMetadata
 from plugins.registry import PluginRegistry
+from game.hunting import is_hunting
+from game.combat import monster_lifesteal
+import game.combat as game_combat
 
 logger = logging.getLogger(__name__)
 
@@ -139,6 +143,13 @@ class MonsterEncountersPlugin(GamePlugin):
         _dps_cache.set(cache_key, total)
         return total
 
+    async def _pet_combat(self, player: Player) -> tuple[int, str]:
+        try:
+            from game.pets import maybe_pet_combat
+            return await maybe_pet_combat(player)
+        except Exception:
+            return 0, ""
+
     async def _spawn_encounters(self, bot: Bot = None) -> None:
         if not bot:
             logger.warning("Bot not available for monster encounters")
@@ -155,6 +166,9 @@ class MonsterEncountersPlugin(GamePlugin):
 
         for player in players:
             uid = player.uid
+            if is_hunting(player):
+                logger.info(f"Player {uid} is hunting, skipping monster spawn")
+                continue
             if uid in self._pending_fights and self._pending_fights[uid]:
                 logger.info(f"Player {uid} already has pending fights, skipping")
                 continue
@@ -254,6 +268,10 @@ class MonsterEncountersPlugin(GamePlugin):
                 to_remove.append(uid)
                 continue
 
+            if is_hunting(player):
+                to_remove.append(uid)
+                continue
+
             try:
                 monster = monsters.pop(0)
                 logger.info(f"Processing fight for {uid}: {len(monsters)} monsters remaining")
@@ -312,7 +330,8 @@ class MonsterEncountersPlugin(GamePlugin):
             rank_emoji = cfg.RARITY_EMOJI.get(item.get("rank", "Common"), "⚪")
 
             current_item = getattr(player, slot, None)
-            if isinstance(current_item, dict) and is_item_better(item, current_item):
+            # ponytail: пустой слот — тоже экипировка; isinstance-гейт не пускал
+            if not isinstance(current_item, dict) or is_item_better(item, current_item):
                 setattr(player, slot, item)
                 player.sync_max_hp_mp()
                 if slot not in update_cols:
@@ -623,15 +642,28 @@ class MonsterEncountersPlugin(GamePlugin):
         _boss_skill_last: dict[str, int] = {}
         _skill_level_cache: dict[str, int] = {}
         _pending_skill_xp: list[tuple] = []
-        active_poison_ticks = 0
-        active_poison_dmg = 0
+        active_dots: dict[str, dict] = {}
         player_stunned = False
+        monster_frozen = False
+
+        weapon_item = player.weapon
+        weapon_element = ""
+        if isinstance(weapon_item, dict):
+            weapon_element = weapon_item.get("element", "")
+        elif isinstance(weapon_item, str):
+            try:
+                weapon_element = (json.loads(weapon_item) or {}).get("element", "")
+            except (json.JSONDecodeError, TypeError):
+                weapon_element = ""
 
         while player_hp > 0 and monster_hp > 0 and round_num < MAX_ROUNDS:
             round_num += 1
             r = {"num": round_num}
             round_passives = []
             skill_msgs = []
+
+            fury = game_combat.get_fury(uid)
+            ult_used = fury >= 100
 
             if player_stunned:
                 p_dmg = 0
@@ -640,6 +672,16 @@ class MonsterEncountersPlugin(GamePlugin):
                 player_stunned = False
             else:
                 p_dmg = max(1, p_max // 2)
+                if ult_used:
+                    p_dmg = int(p_dmg * cfg.FURY_ULT_MULT)
+                    game_combat.reset_fury(uid)
+                    r["fury_ult"] = True
+
+            combo_mult = min(1.0 + streak * cfg.COMBO_STREAK_BONUS_PER_WIN,
+                             1.0 + cfg.COMBO_STREAK_MAX_MULT)
+            if combo_mult > 1.0:
+                p_dmg = int(p_dmg * combo_mult)
+                r["combo"] = int((combo_mult - 1.0) * 100)
 
             if first_strike_bonus > 0 and round_num == 1:
                 p_dmg = int(p_dmg * (1.0 + first_strike_bonus))
@@ -647,6 +689,12 @@ class MonsterEncountersPlugin(GamePlugin):
 
             if nearby_damage_bonus > 1.0:
                 p_dmg = int(p_dmg * nearby_damage_bonus)
+
+            # Element weakness: ×1.5 если элемент оружия бьёт монстра по слабости
+            w_mult = game_combat.weakness_mult(weapon_element, monster)
+            if w_mult > 1.0:
+                p_dmg = int(p_dmg * w_mult)
+                r["element_weak"] = weapon_element
 
             # Active player skill attempt
             avail_skills = self._get_available_player_skills(player, player_skill_cd, round_num)
@@ -666,14 +714,15 @@ class MonsterEncountersPlugin(GamePlugin):
                     skill_msgs.append(skill_msg)
                 r["skill_used"] = chosen.get_display_name(lang)
                 if skill_poison > 0:
-                    active_poison_ticks = 2
-                    active_poison_dmg = skill_poison
+                    active_dots["poison"] = {"ticks": 2, "dmg": skill_poison}
 
             # Poison DoT tick
-            if active_poison_ticks > 0 and monster_hp > 0:
-                dot = active_poison_dmg
+            if active_dots.get("poison") and monster_hp > 0:
+                dot = active_dots["poison"]["dmg"]
                 monster_hp = max(0, monster_hp - dot)
-                active_poison_ticks -= 1
+                active_dots["poison"]["ticks"] -= 1
+                if active_dots["poison"]["ticks"] <= 0:
+                    del active_dots["poison"]
                 r["dot"] = dot
 
             player.hp = player_hp
@@ -721,10 +770,37 @@ class MonsterEncountersPlugin(GamePlugin):
             mon_def_reduction = min(0.75, monster_defense / (monster_defense + 200))
             p_dmg = int(p_dmg * (1 - mon_def_reduction))
             monster_hp = max(0, monster_hp - p_dmg)
+            if not ult_used:
+                game_combat.add_fury(uid, cfg.FURY_GAIN_ON_HIT)
+            else:
+                r["fury_gain"] = 0
 
             if damage_dealt_res.poison_damage > 0:
                 monster_hp = max(0, monster_hp - damage_dealt_res.poison_damage)
                 r["poison"] = damage_dealt_res.poison_damage
+
+            # Element proc: огненное оружие поджигает монстра (burn DoT)
+            if weapon_element == "fire" and monster_hp > 0 and "burn" not in active_dots:
+                if random.random() < cfg.DOT_BURN_CHANCE:
+                    active_dots["burn"] = {"ticks": cfg.DOT_BURN_TICKS, "dmg": int(p_dmg * cfg.DOT_BURN_DMG_PCT)}
+                    r["burn_proc"] = True
+
+            # Burn DoT tick
+            if active_dots.get("burn") and monster_hp > 0:
+                dot = active_dots["burn"]["dmg"]
+                monster_hp = max(0, monster_hp - dot)
+                active_dots["burn"]["ticks"] -= 1
+                if active_dots["burn"]["ticks"] <= 0:
+                    del active_dots["burn"]
+                r["burn"] = dot
+
+            # Боевой призыв пета — шансовый бонусный удар
+            if monster_hp > 0:
+                pet_dmg, pet_name = await _pet_combat(player)
+                if pet_dmg > 0:
+                    monster_hp = max(0, monster_hp - pet_dmg)
+                    r["pet_dmg"] = pet_dmg
+                    r["pet_name"] = pet_name
 
             r["player_attack"] = p_dmg
             r["monster_hp"] = monster_hp
@@ -741,48 +817,60 @@ class MonsterEncountersPlugin(GamePlugin):
 
             m_dmg = max(1, monster_dps // 2)
 
+            # Freeze: ледяное оружие пропускает весь ход монстра
+            frozen_turn = False
+            if monster_frozen:
+                monster_frozen = False
+                m_dmg = 0
+                r["freeze"] = True
+                frozen_turn = True
+            elif weapon_element == "ice" and random.random() < cfg.FREEZE_SKIP_CHANCE:
+                monster_frozen = True
+                r["freeze_proc"] = True
+
             # C2 — monster rage per streak
             streak_bonus = min(0.5, streak * 0.04)
             if streak_bonus > 0:
                 m_dmg = int(m_dmg * (1.0 + streak_bonus))
                 r["rage"] = int(streak_bonus * 100)
 
-            # B — monster passive procs from BOSS_SKILLS
-            monster_passives = RANK_PASSIVES.get(monster_rank, [])
-            for passive_id in monster_passives:
-                skill_cfg = cfg.BOSS_SKILLS.get(passive_id)
-                if not skill_cfg:
-                    continue
-                last_round = _boss_skill_last.get(passive_id, -999)
-                if round_num - last_round < 2:
-                    continue
-                if random.random() < skill_cfg["chance"]:
-                    _boss_skill_last[passive_id] = round_num
-                    if passive_id == "fireball":
-                        m_dmg = int(m_dmg * skill_cfg["damage_mult"])
-                        skill_msgs.append("🔥 *Fireball!*")
-                    elif passive_id == "heal":
-                        pct = skill_cfg["heal_pct"]
-                        heal = int(monster_max_hp * pct)
-                        actual = min(heal, monster_max_hp - monster_hp)
-                        monster_hp += actual
-                        skill_msgs.append(f"💚 *Heal:* +{actual} HP")
-                    elif passive_id == "dark_burst":
-                        m_dmg = int(m_dmg * skill_cfg["damage_mult"])
-                        skill_msgs.append("💥 *Dark Burst!*")
-                    elif passive_id == "stun":
-                        player_stunned = True
-                        skill_msgs.append("💫 *Stun!* — player loses turn" if lang == "en" else "💫 *Stun!* — игрок теряет ход")
+            if not frozen_turn:
+                # B — monster passive procs from BOSS_SKILLS
+                monster_passives = RANK_PASSIVES.get(monster_rank, [])
+                for passive_id in monster_passives:
+                    skill_cfg = cfg.BOSS_SKILLS.get(passive_id)
+                    if not skill_cfg:
+                        continue
+                    last_round = _boss_skill_last.get(passive_id, -999)
+                    if round_num - last_round < 2:
+                        continue
+                    if random.random() < skill_cfg["chance"]:
+                        _boss_skill_last[passive_id] = round_num
+                        if passive_id == "fireball":
+                            m_dmg = int(m_dmg * skill_cfg["damage_mult"])
+                            skill_msgs.append("🔥 *Fireball!*")
+                        elif passive_id == "heal":
+                            pct = skill_cfg["heal_pct"]
+                            heal = int(monster_max_hp * pct)
+                            actual = min(heal, monster_max_hp - monster_hp)
+                            monster_hp += actual
+                            skill_msgs.append(f"💚 *Heal:* +{actual} HP")
+                        elif passive_id == "dark_burst":
+                            m_dmg = int(m_dmg * skill_cfg["damage_mult"])
+                            skill_msgs.append("💥 *Dark Burst!*")
+                        elif passive_id == "stun":
+                            player_stunned = True
+                            skill_msgs.append("💫 *Stun!* — player loses turn" if lang == "en" else "💫 *Stun!* — игрок теряет ход")
 
-            # Active monster skill attempt
-            monster_skill = self._select_monster_skill(monster_hp, monster_max, round_num, monster_skill_cd)
-            if monster_skill:
-                m_dmg, monster_hp, mon_skill_msg = self._apply_monster_skill(
-                    monster_skill, m_dmg, monster_hp, monster_max, lang
-                )
-                monster_skill_cd[monster_skill["id"]] = round_num + monster_skill["cooldown"]
-                if mon_skill_msg:
-                    skill_msgs.append(mon_skill_msg)
+                # Active monster skill attempt
+                monster_skill = self._select_monster_skill(monster_hp, monster_max, round_num, monster_skill_cd)
+                if monster_skill:
+                    m_dmg, monster_hp, mon_skill_msg = self._apply_monster_skill(
+                        monster_skill, m_dmg, monster_hp, monster_max, lang
+                    )
+                    monster_skill_cd[monster_skill["id"]] = round_num + monster_skill["cooldown"]
+                    if mon_skill_msg:
+                        skill_msgs.append(mon_skill_msg)
 
             modified_m_dmg, damage_taken_res = await PassiveSkillRegistry.trigger_on_damage_taken(
                 player, m_dmg
@@ -801,6 +889,14 @@ class MonsterEncountersPlugin(GamePlugin):
             r["monster_attack"] = m_dmg
             r["player_hp"] = player_hp
             r["player_max"] = player_max_hp
+
+            ls = monster_lifesteal(monster)
+            if ls > 0 and m_dmg > 0:
+                healed = min(monster_max, monster_hp + int(m_dmg * ls)) - monster_hp
+                monster_hp += healed
+                r["monster_lifesteal"] = healed
+            if m_dmg > 0:
+                game_combat.add_fury(uid, cfg.FURY_GAIN_ON_TAKEN)
 
             if skill_msgs:
                 r["skill_msg"] = "\n".join(skill_msgs)
@@ -826,6 +922,23 @@ class MonsterEncountersPlugin(GamePlugin):
                 line += f"\n  👹 {r['monster_attack']} → 👤 [{p_bar}] {p_hp_val}"
             if "first_strike" in r:
                 line += "\n  ⚡ *First Strike!*" if lang == "en" else "\n  ⚡ *Первая атака!*"
+            if "fury_ult" in r:
+                line += "\n  🔥 *FURY ULT!* ×{}".format(cfg.FURY_ULT_MULT)
+            if "element_weak" in r:
+                el = r["element_weak"]
+                el_name = cfg.ELEMENT_NAMES_RU.get(el, el) if lang == "ru" else cfg.ELEMENT_NAMES_EN.get(el, el)
+                line += f"\n  ⚔️ *{el_name}!* ×{cfg.ELEMENT_WEAK_MULT} dmg" if lang == "en" else f"\n  ⚔️ *{el_name}!* ×{cfg.ELEMENT_WEAK_MULT} урона"
+            if "burn_proc" in r:
+                line += "\n  🔥 *Ignited!*" if lang == "en" else "\n  🔥 *Поджог!*"
+            if "burn" in r:
+                line += f"\n  🔥 *Burn:* -{r['burn']} HP" if lang == "en" else f"\n  🔥 *Горение:* -{r['burn']} HP"
+            if "freeze_proc" in r:
+                line += "\n  ❄️ *Freeze!*" if lang == "en" else "\n  ❄️ *Заморозка!*"
+            if "freeze" in r:
+                line += "\n  ❄️ *Monster is frozen!*" if lang == "en" else "\n  ❄️ *Монстр заморожен!*"
+            if "pet_dmg" in r:
+                pet_line = f"\n  🐾 *{r['pet_name']}* hits: -{r['pet_dmg']} HP" if lang == "en" else f"\n  🐾 *{r['pet_name']}* бьёт: -{r['pet_dmg']} HP"
+                line += pet_line
             if r.get("skill_msg"):
                 for sm in r["skill_msg"].split("\n"):
                     if sm.strip():
@@ -836,12 +949,16 @@ class MonsterEncountersPlugin(GamePlugin):
                 line += "\n  ⛔ *DAMAGE CAPPED*" if lang == "en" else "\n  ⛔ *УРОН ОГРАНИЧЕН*"
             if "fatigue" in r:
                 line += f"\n  💤 *Fatigue:* -{r['fatigue']}%" if lang == "en" else f"\n  💤 *Усталость:* -{r['fatigue']}%"
+            if "combo" in r:
+                line += f"\n  ⚡ *Combo:* +{r['combo']}% dmg" if lang == "en" else f"\n  ⚡ *Комбо:* +{r['combo']}% урона"
             if "rage" in r:
                 line += f"\n  🔥 *Rage:* +{r['rage']}% dmg" if lang == "en" else f"\n  🔥 *Ярость:* +{r['rage']}% урона"
             if "stunned_skip" in r:
                 line += "\n  💫 *STUNNED!*" if lang == "en" else "\n  💫 *ОГЛУШЕН!*"
             if "dot" in r:
                 line += f"\n  ☠️ *DoT:* -{r['dot']} HP" if lang == "en" else f"\n  ☠️ *DoT:* -{r['dot']} HP"
+            if "monster_lifesteal" in r:
+                line += f"\n  🩸 *Vampirism:* +{r['monster_lifesteal']} HP" if lang == "en" else f"\n  🩸 *Вампиризм:* +{r['monster_lifesteal']} HP"
             if "poison" in r:
                 line += f"\n  ☠️ *Poison:* -{r['poison']} HP" if lang == "en" else f"\n  ☠️ *Яд:* -{r['poison']} HP"
             if "reflect" in r:
@@ -867,6 +984,7 @@ class MonsterEncountersPlugin(GamePlugin):
             player.monster_kills = (player.monster_kills or 0) + 1
         else:
             player.fight_streak = 0
+            game_combat.reset_fury(uid, cfg.FURY_RESET_LOSS)
 
         # Penalty calc
         alvar = 90 if player.align == 1 else 100
@@ -1026,10 +1144,19 @@ class MonsterEncountersPlugin(GamePlugin):
                     ])
             else:
                 player.monster_deaths = (player.monster_deaths or 0) + 1
-                player.nextxp += val
-                player.totalxplost += val
+
+                from plugins.vip_shop import has_active_protect
+                protect_active = has_active_protect(player)
+                if not protect_active:
+                    player.nextxp += val
+                    player.totalxplost += val
 
                 if lang == "en":
+                    penalty_line = (
+                        "🛡️ *PROTECT!* Penalty cancelled!"
+                        if protect_active else
+                        f"💀 *MONSTER WINS!* Penalty +{ctime(val, lang)} to level {player.level + 1}."
+                    )
                     msg = "\n".join([
                         "⚔️ *Monster Encounter!*",
                         "", f"{player.name} vs *{monster_name}* (Lv.{monster_level}){streak_header}",
@@ -1037,11 +1164,16 @@ class MonsterEncountersPlugin(GamePlugin):
                         f"━━━ Rounds ({round_num}) ━━━",
                         rounds_str,
                         "",
-                        f"💀 *MONSTER WINS!* Penalty +{ctime(val, lang)} to level {player.level + 1}.",
+                        penalty_line,
                         f"📊 HP: {player.hp}/{player.max_hp}",
                         f"Next level in: *{ctime(player.nextxp - player.currentxp, lang)}*",
                     ])
                 else:
+                    penalty_line = (
+                        "🛡️ *ЗАЩИТА!* Штраф отменён!"
+                        if protect_active else
+                        f"💀 *МОНСТР ПОБЕДИЛ!* Штраф +{ctime(val, lang)} к уровню {player.level + 1}."
+                    )
                     msg = "\n".join([
                         "⚔️ *Встреча с монстром!*",
                         "", f"{player.name} vs *{monster_name}* (Ур.{monster_level}){streak_header}",
@@ -1049,21 +1181,40 @@ class MonsterEncountersPlugin(GamePlugin):
                         f"━━━ Раунды ({round_num}) ━━━",
                         rounds_str,
                         "",
-                        f"💀 *МОНСТР ПОБЕДИЛ!* Штраф +{ctime(val, lang)} к уровню {player.level + 1}.",
+                        penalty_line,
                         f"📊 HP: {player.hp}/{player.max_hp}",
                         f"До след. уровня: *{ctime(player.nextxp - player.currentxp, lang)}*",
                     ])
 
         await player.update(_columns=update_cols)
 
-        from handlers.quests import update_quest_progress
-        await update_quest_progress(player, "kill_monster", 1)
+        if player_won:
+            from game.quests import on_win_streak
+            await on_win_streak(player, player.fight_streak or 0)
 
-        try:
-            from game.quests import on_monster_defeated
-            await on_monster_defeated(player, monster_name)
-        except Exception as e:
-            logger.error(f"Quest progress error: {e}")
+            try:
+                from game.quests import on_monster_defeated
+                await on_monster_defeated(player, monster_name)
+            except Exception as e:
+                logger.error(f"Quest progress error: {e}")
+
+            try:
+                from core.loot import maybe_drop_gem
+                gem_id = await maybe_drop_gem(player.uid)
+                if gem_id:
+                    from game.gems import get_gem_config
+                    conf = get_gem_config(gem_id) or {}
+                    msg = (f"💎 {conf.get('name_ru', gem_id)} ({conf.get('icon', '')}) "
+                           f"выпал в инвентарь камней!" if lang != "en" else
+                           f"💎 {conf.get('name_en', gem_id)} ({conf.get('icon', '')}) "
+                           f"dropped to gem inventory!")
+                    from bot import send_to_players
+                    await send_to_players(bot, msg, player_uids=[player.uid])
+            except Exception as e:
+                logger.error(f"Gem drop error: {e}")
+        else:
+            from game.quests import on_death
+            await on_death(player)
 
         from bot import send_to_players
         await send_to_players(bot, msg, player_uids=[player.uid])

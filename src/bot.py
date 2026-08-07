@@ -154,18 +154,22 @@ async def post_init(app: Application) -> None:
         BotCommand("profile", "Твой профиль"),
         BotCommand("quest",   "Текущий квест"),
         BotCommand("passives","Пассивные навыки"),
-        BotCommand("bosses",  "Список боссов"),
         BotCommand("help",    "Список команд"),
         BotCommand("starshop","Star Магазин"),
+        BotCommand("daily",   "Ежедневная награда"),
+        BotCommand("clan",    "Кланы"),
+        BotCommand("pets",    "Питомцы"),
     ], language_code="ru")
     await app.bot.set_my_commands([
         BotCommand("start",   "Main menu"),
         BotCommand("profile", "Your profile"),
         BotCommand("quest",   "Current quest"),
         BotCommand("passives","Passive skills"),
-        BotCommand("bosses",  "Boss list"),
         BotCommand("help",    "Command list"),
         BotCommand("starshop","Star Shop"),
+        BotCommand("daily",   "Daily reward"),
+        BotCommand("clan",    "Clans"),
+        BotCommand("pets",    "Pets"),
     ], language_code="en")
 
     # Запускаем HTTP сервер для healthcheck в том же event loop
@@ -221,7 +225,7 @@ def main():
     # БД создаём синхронно до старта event loop
     init_db()
 
-    from handlers import admin, user, alignment, jobs, listeners, maps
+    from handlers import admin, user, alignment, jobs, listeners, maps, hunting
     from core.errors import global_error_handler
     from core.shutdown import GracefulShutdown, HealthChecker
 
@@ -292,10 +296,31 @@ def main():
     listeners.register(app)
     admin.register(app)
     maps.register_handlers(app)
+    hunting.register(app)
     import handlers.bosses as bosses
     bosses.register_handlers(app)
     import handlers.quests as quests
     quests.register_handlers(app)
+    import handlers.daily as daily
+    daily.register(app)
+    import handlers.clans as clans
+    clans.register(app)
+    import handlers.pets as pets
+    pets.register(app)
+    import handlers.dungeons as dungeons
+    dungeons.register(app)
+    import handlers.arena as arena
+    arena.register(app)
+    import handlers.gems as gems
+    gems.register(app)
+    import handlers.achievements as achievements
+    achievements.register(app)
+    import handlers.titles as titles
+    titles.register(app)
+    import handlers.raid as raid
+    raid.register(app)
+    import handlers.battle as battle
+    battle.register(app)
     from plugins.shop import register_shop_handlers
     register_shop_handlers(app)
     from plugins.vip_shop import register_vip_handlers

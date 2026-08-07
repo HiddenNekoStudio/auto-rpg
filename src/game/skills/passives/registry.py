@@ -155,6 +155,8 @@ class PassiveSkillRegistry:
             player_uid=player.uid,
             equipped=True
         ).all()
+        racial_ids = list(getattr(cfg, 'RACIAL_PASSIVES', {}).values())
+        equipped = [p for p in equipped if p.passive_id not in racial_ids]
         
         max_slots = getattr(cfg, 'PASSIVE_MAX_SLOTS', 5)
         if len(equipped) >= max_slots:

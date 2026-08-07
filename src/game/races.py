@@ -124,7 +124,7 @@ def _racial_skill_lines(race: str, lang: str) -> list[str]:
 def race_selector_text(lang: str = "ru") -> str:
     sep = "━" * 21
     parts = []
-    for race in ("human", "dwarf", "elf"):
+    for race in RACE_BONUSES:
         bonuses = RACE_BONUSES[race]
         name = bonuses["name_en"] if lang == "en" else bonuses["name_ru"]
         desc = bonuses["desc_en"] if lang == "en" else bonuses["desc_ru"]

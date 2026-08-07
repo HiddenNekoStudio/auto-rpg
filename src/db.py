@@ -30,7 +30,11 @@ def _now_ts() -> int:
     """Return current unix timestamp (callable for ormar defaults)."""
     return int(datetime.now().timestamp())
 
-DBSTRING = f"{cfg.DBTYPE}://{quote_plus(cfg.DBUSER)}:{quote_plus(cfg.DBPASS)}@{cfg.DBHOST}:{cfg.DBPORT}/{cfg.DBNAME}"
+# ponytail: sqlite не использует хост/порт/креды — иначе URL sqlite://user:pass@host/db
+if cfg.DBTYPE.startswith("sqlite"):
+    DBSTRING = f"sqlite+aiosqlite:///{cfg.DB_PATH}"
+else:
+    DBSTRING = f"{cfg.DBTYPE}://{quote_plus(cfg.DBUSER)}:{quote_plus(cfg.DBPASS)}@{cfg.DBHOST}:{cfg.DBPORT}/{cfg.DBNAME}"
 engine_args = {
     "pool_size": POOL_SIZE,
     "max_overflow": MAX_OVERFLOW,
@@ -102,6 +106,7 @@ class PlayerQuest(ormar.Model):
     reward_xp: int = ormar.Integer(default=0)
     reward_gold: int = ormar.Integer(default=0)
     reward_item: str = ormar.String(max_length=100, default="")  # Для story
+    bonus_tokens: int = ormar.Integer(default=0)  # Бонус токенами (ежедневный квест)
     
     # Статус и время
     status: str = ormar.String(max_length=20, default="offered")  # offered/active/completed/failed/abandoned
@@ -134,6 +139,7 @@ class Boss(ormar.Model):
     defeated_at: int = ormar.Integer(default=0)
     defeated_by: int = ormar.BigInteger(default=0)
     respawn_available: int = ormar.Integer(default=0)
+    despawn_at: int = ormar.Integer(default=0)  # дедлайн убийства после респауна (0 = нет окна)
     respawn_cost: int = ormar.Integer(default=50)
     difficulty: str = ormar.String(max_length=20, default="medium")
     legendary_counter: int = ormar.Integer(default=0)
@@ -218,6 +224,12 @@ class Player(ormar.Model):
     state_context: str = ormar.Text(default="{}")
     tokens: int = ormar.Integer(default=0)  # Токены за онлайн (12ч), для премиума
     gold: int = ormar.Integer(default=0)
+    achievement_progress: str = ormar.Text(default="{}")  # счётчики достижений
+    title_id: str = ormar.String(max_length=50, default="")  # экипированный титул
+
+    # Ежедневные награды (ретеншн)
+    last_daily_claim: int = ormar.Integer(default=0)  # timestamp последнего ежедневного забора
+    daily_streak: int = ormar.Integer(default=0)      # серия дней ежедневного входа
     
     # Idle Mode
     idle_since: int = ormar.Integer(default=0)   # timestamp входа в idle (0 = не idle)
@@ -241,6 +253,10 @@ class Player(ormar.Model):
     prestige_gold_level: int = ormar.Integer(default=0)   # Уровень Gold бонуса от prestige
     
     quest_cooldown: int = ormar.Integer(default=0)  # Timestamp кулдауна квестов
+    
+    # Система охоты (0 = не на охоте)
+    hunting_expires_at: int = ormar.Integer(default=0)
+    hunting_data: str = ormar.Text(default="{}")
     
     hp: int = ormar.Integer(default=100)
     max_hp: int = ormar.Integer(default=100)
@@ -350,21 +366,71 @@ class Player(ormar.Model):
                 total += item.get(key, 0)
         return total
 
+    def get_set_pieces(self, set_id: str) -> int:
+        """Сколько предметов заданного набора надето (из JSON слотов)."""
+        return sum(
+            1 for slot in cfg.WEAPON_SLOTS
+            if isinstance(item := getattr(self, slot, None), dict) and item.get("set") == set_id
+        )
+
+    def get_set_bonuses(self) -> dict:
+        """Активные сетовые бонусы: set_id -> {dps_pct, hp_pct, ...}."""
+        from core.loot import get_set_bonus
+        result: dict = {}
+        seen: set = set()
+        for slot in cfg.WEAPON_SLOTS:
+            item = getattr(self, slot, None)
+            if not isinstance(item, dict):
+                continue
+            sid = item.get("set")
+            if not sid or sid in seen:
+                continue
+            seen.add(sid)
+            pieces = self.get_set_pieces(sid)
+            bonus = get_set_bonus(sid, pieces)
+            if bonus:
+                result[sid] = bonus
+        return result
+
+    def _get_set_sum(self, key: str) -> float:
+        """Суммарное значение ключа по всем активным сетовым бонусам (для % модификаторов)."""
+        total = 0.0
+        for bonus in self.get_set_bonuses().values():
+            total += bonus.get(key, 0)
+        return total
+
+    def _get_set_stat(self, key: str) -> int:
+        """Суммарное значение ключа-стата (def/mp) по активным сетовым бонусам."""
+        return int(sum(bonus.get(key, 0) for bonus in self.get_set_bonuses().values()))
+
     def get_dps(self) -> int:
         """Суммарный DPS со всего снаряжения."""
         total = self._get_equip_sum("dps")
         from game.races import get_race_dps_mult
         total = int(total * get_race_dps_mult(self.race))
+        from game.pets import pet_dps_mult
+        total = int(total * pet_dps_mult(self.uid))
+        total = int(total * (1 + self._get_set_sum("dps_pct") / 100))
+        from game.gems import get_socket_bonuses_sync
+        total = int(total * (1 + get_socket_bonuses_sync(self)["dps_pct"] / 100))
         return total
-    
+
     def get_max_hp(self) -> int:
         """Max HP = база (100 + level*15) + бонус со снаряжения, × расовый множитель."""
         from game.races import get_race_hp_mult
-        return int((100 + self.level * 15 + self._get_equip_sum("hp_bonus")) * get_race_hp_mult(self.race))
+        total = int((100 + self.level * 15 + self._get_equip_sum("hp_bonus")) * get_race_hp_mult(self.race))
+        from game.pets import pet_hp_mult
+        total = int(total * pet_hp_mult(self.uid))
+        total = int(total * (1 + self._get_set_sum("hp_pct") / 100))
+        from game.gems import get_socket_bonuses_sync
+        total = int(total * (1 + get_socket_bonuses_sync(self)["hp_pct"] / 100))
+        return total
 
     def get_max_mp(self) -> int:
         """Max MP = база (50 + level*8) + бонус со снаряжения."""
-        return 50 + self.level * 8 + self._get_equip_sum("mp_bonus")
+        from game.gems import get_socket_bonuses_sync
+        return (50 + self.level * 8 + self._get_equip_sum("mp_bonus")
+                + self._get_set_stat("mp") + get_socket_bonuses_sync(self)["mp"])
 
     def sync_max_hp_mp(self):
         """Синхронизировать max_hp / max_mp с текущим расчётом (уровень + экипировка)."""
@@ -375,8 +441,13 @@ class Player(ormar.Model):
         """Суммарный Defense = базовый + бонус со снаряжения + бонус расы."""
         base = self.defense or 0
         base += self._get_equip_sum("def_bonus")
+        base += self._get_set_stat("def")
+        from game.gems import get_socket_bonuses_sync
+        base += get_socket_bonuses_sync(self)["def"]
         from game.races import get_race_defense_mult
         base = int(base * get_race_defense_mult(self.race))
+        from game.pets import pet_def_add
+        base += pet_def_add(self.uid)
         return base
 
     def get_defense_reduction(self) -> float:
@@ -503,6 +574,86 @@ class ClanInvite(ormar.Model):
     status: str = ormar.String(max_length=20, default="pending")
 
 
+class ClanBoss(ormar.Model):
+    """Клановый босс — общий урон членов клана."""
+    ormar_config = basemeta.copy(tablename="clan_bosses")
+
+    id: int = ormar.Integer(primary_key=True)
+    clan_id: int = ormar.Integer(index=True)
+    level: int = ormar.Integer(default=1)
+    name: str = ormar.String(max_length=100, default="")
+    hp: int = ormar.BigInteger(default=0)
+    max_hp: int = ormar.BigInteger(default=0)
+    spawned_at: int = ormar.Integer(default=0)
+    despawn_at: int = ormar.Integer(default=0)
+    status: str = ormar.String(max_length=20, default="active")  # active | defeated | despawned
+
+
+class ClanBossHit(ormar.Model):
+    """Вклад урона по клановому боссу."""
+    ormar_config = basemeta.copy(tablename="clan_boss_hits")
+
+    id: int = ormar.Integer(primary_key=True)
+    clan_boss_id: int = ormar.Integer(index=True)
+    player_uid: int = ormar.BigInteger(index=True)
+    damage: int = ormar.BigInteger(default=0)
+    last_hit_at: int = ormar.Integer(default=0)
+
+
+class RaidBoss(ormar.Model):
+    """Мировой рейд-босс: все игроки бьют общего босса."""
+    ormar_config = basemeta.copy(tablename="raid_bosses")
+
+    id: int = ormar.Integer(primary_key=True)
+    level: int = ormar.Integer(default=1)
+    name: str = ormar.String(max_length=100, default="")
+    hp: int = ormar.BigInteger(default=0)
+    max_hp: int = ormar.BigInteger(default=0)
+    spawned_at: int = ormar.Integer(default=0)
+    despawn_at: int = ormar.Integer(default=0)
+    status: str = ormar.String(max_length=20, default="active")  # active | defeated | despawned
+
+
+class RaidBossHit(ormar.Model):
+    """Вклад урона по рейд-боссу."""
+    ormar_config = basemeta.copy(tablename="raid_boss_hits")
+
+    id: int = ormar.Integer(primary_key=True)
+    raid_boss_id: int = ormar.Integer(index=True)
+    player_uid: int = ormar.BigInteger(index=True)
+    damage: int = ormar.BigInteger(default=0)
+    last_hit_at: int = ormar.Integer(default=0)
+
+
+class DungeonRun(ormar.Model):
+    """Авто-бой в подземелье: комнаты проходятся по очереди."""
+    ormar_config = basemeta.copy(tablename="dungeon_runs")
+
+    id: int = ormar.Integer(primary_key=True)
+    player_uid: int = ormar.BigInteger(index=True)
+    dungeon_id: str = ormar.String(max_length=50, default="")
+    floor: int = ormar.Integer(default=1)
+    max_floor: int = ormar.Integer(default=1)
+    status: str = ormar.String(max_length=20, default="active")  # active | won | failed | abandoned
+    data: str = ormar.Text(default="{}")
+    started_at: int = ormar.Integer(default=0)
+    last_tick_at: int = ormar.Integer(default=0)
+
+
+class ArenaRun(ormar.Model):
+    """Арена волн: бесконечный авто-бой, волны сильнее с каждой победой."""
+    ormar_config = basemeta.copy(tablename="arena_runs")
+
+    id: int = ormar.Integer(primary_key=True)
+    player_uid: int = ormar.BigInteger(index=True)
+    wave: int = ormar.Integer(default=1)
+    best_wave: int = ormar.Integer(default=0)
+    status: str = ormar.String(max_length=20, default="active")  # active | failed | abandoned
+    data: str = ormar.Text(default="{}")
+    started_at: int = ormar.Integer(default=0)
+    last_tick_at: int = ormar.Integer(default=0)
+
+
 class PlayerPassive(ormar.Model):
     """Пассивные навыки игрока."""
     ormar_config = basemeta.copy(tablename="player_passives")
@@ -516,6 +667,51 @@ class PlayerPassive(ormar.Model):
     acquired_at: int = ormar.Integer(default=0)
     cooldown_until: int = ormar.Integer(default=0)
     last_triggered_at: int = ormar.Integer(default=0)
+
+
+class PlayerPet(ormar.Model):
+    """Питомцы игрока."""
+    ormar_config = basemeta.copy(tablename="player_pets")
+
+    id: int = ormar.Integer(primary_key=True)
+    player_uid: int = ormar.BigInteger(index=True)
+    pet_id: str = ormar.String(max_length=50)
+    level: int = ormar.Integer(default=1)
+    xp: int = ormar.Integer(default=0)
+    equipped: bool = ormar.Boolean(default=False)
+    source: str = ormar.String(max_length=20, default="shop")  # shop | boss | rare
+    acquired_at: int = ormar.Integer(default=0)
+
+
+class PlayerGem(ormar.Model):
+    """Драгоценные камни игрока (инвентарь камней)."""
+    ormar_config = basemeta.copy(tablename="player_gems")
+
+    id: int = ormar.Integer(primary_key=True)
+    player_uid: int = ormar.BigInteger(index=True)
+    gem_id: str = ormar.String(max_length=50)
+    equipped: bool = ormar.Boolean(default=False)
+    acquired_at: int = ormar.Integer(default=0)
+
+
+class PlayerAchievement(ormar.Model):
+    """Достижения игрока."""
+    ormar_config = basemeta.copy(tablename="player_achievements")
+
+    id: int = ormar.Integer(primary_key=True)
+    player_uid: int = ormar.BigInteger(index=True)
+    achievement_id: str = ormar.String(max_length=50)
+    unlocked_at: int = ormar.Integer(default=0)
+
+
+class PlayerTitle(ormar.Model):
+    """Титулы игрока."""
+    ormar_config = basemeta.copy(tablename="player_titles")
+
+    id: int = ormar.Integer(primary_key=True)
+    player_uid: int = ormar.BigInteger(index=True)
+    title_id: str = ormar.String(max_length=50)
+    unlocked_at: int = ormar.Integer(default=0)
 
 
 class PlayerActiveSkill(ormar.Model):

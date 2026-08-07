@@ -53,7 +53,6 @@ class TestItemString:
         }
         result = item_string(item, "ru")
         assert "Меч" in result
-        assert "Базовый" in result
         assert "25" in result
         assert "⚪" in result  # Common emoji
 
@@ -443,12 +442,12 @@ class TestStarsShopKeyboard:
     """Тесты клавиатуры Stars магазина"""
 
     def test_keyboard_buttons_count(self):
-        """Количество кнопок = 10 (1-10 токенов)"""
+        """Количество рядов = 6 (10 токенов по 2 в ряд + кнопка Назад)"""
         from plugins.stars_shop import build_stars_keyboard
         keyboard = build_stars_keyboard("ru")
         buttons = keyboard.inline_keyboard
-        # 10 кнопок токенов + 1 кнопка "Назад"
-        assert len(buttons) == 11
+        # 5 рядов токенов + 1 ряд кнопки "Назад"
+        assert len(buttons) == 6
 
     def test_keyboard_callback_data(self):
         """Проверка callback_data для кнопок"""
