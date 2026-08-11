@@ -796,7 +796,7 @@ class MonsterEncountersPlugin(GamePlugin):
 
             # Боевой призыв пета — шансовый бонусный удар
             if monster_hp > 0:
-                pet_dmg, pet_name = await _pet_combat(player)
+                pet_dmg, pet_name = await self._pet_combat(player)
                 if pet_dmg > 0:
                     monster_hp = max(0, monster_hp - pet_dmg)
                     r["pet_dmg"] = pet_dmg

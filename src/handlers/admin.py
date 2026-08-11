@@ -1062,7 +1062,7 @@ async def cmd_admin_spawn(update: Update, context: ContextTypes.DEFAULT_TYPE):
     monster, xp = create_encounter(player.level)
     answer = (
         f"🧟 *{monster.name}* атакует!\n"
-        f"Уровень угрозы: {monster.threat}\n"
+        f"Уровень угрозы: {monster.level}\n"
         f"Награда: {xp} XP"
     )
     await send_to_players(update.get_bot(), answer, player_uids=[player.uid], force=True)
