@@ -12,7 +12,7 @@ from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import Application, CommandHandler, CallbackQueryHandler, ContextTypes
 
 import config as cfg
-from db import Player
+from db import Player, database
 from i18n import t
 from core.cache import TTLCache
 from core.telegram_utils import safe_edit
@@ -113,7 +113,14 @@ async def _claim(player, lang: str) -> tuple[str, bool]:
     player.daily_streak = streak
     player.last_daily_claim = now
     player.tokens = (player.tokens or 0) + reward + bonus
-    await player.update(_columns=["daily_streak", "last_daily_claim", "tokens"])
+    day_start = (now // DAY_SECONDS) * DAY_SECONDS
+    res = await database.fetch_val(
+        "UPDATE users SET daily_streak = :s, last_daily_claim = :now, tokens = tokens + :t "
+        "WHERE uid = :uid AND last_daily_claim < :day_start RETURNING 1",
+        {"s": streak, "now": now, "t": reward + bonus, "uid": player.uid, "day_start": day_start},
+    )
+    if not res:
+        return t(lang, "daily_already_msg"), False
 
     msg = t(lang, "daily_claimed", reward=reward, streak=streak)
     if bonus:

@@ -184,6 +184,9 @@ async def post_init(app: Application) -> None:
     # Загружаем плагины (импортируем модули для активации декораторов)
     import plugins.monsters
     import plugins.passive_skills
+    import plugins.boss_passives  # noqa: F401 — регистрирует BossPassivesPlugin
+    # plugins.clans — демо-заглушка, не грузим в проде (дублирует registry пример)
+    # plugins.shop / vip_shop / stars_shop — не через реестр, а через register_*_handlers
     from plugins.registry import PluginRegistry
     
     await PluginRegistry.load_all()

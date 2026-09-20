@@ -14,7 +14,7 @@ from typing import Optional
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup
 
 import config as cfg
-from db import Boss, Player
+from db import Boss, Player, database
 from bot import ctime, send_to_players
 from core.cache import TTLCache
 
@@ -899,7 +899,12 @@ async def resolve_battle(bot, player: Player, boss: Boss, forced: bool = False, 
         boss.despawn_at = 0
         await boss.update(_columns=["defeated", "defeated_at", "defeated_by", "despawn_at", "legendary_counter", "hp", "max_hp", "mp", "max_mp", "defense"])
 
-        await player.update(_columns=["nextxp", "wins", "hp", "mp"])
+        await player.update(_columns=["hp", "mp"])
+        await database.execute(
+            "UPDATE users SET nextxp = CASE WHEN nextxp - :xp > currentxp + 1 THEN nextxp - :xp ELSE currentxp + 1 END, "
+            "wins = wins + 1 WHERE uid = :uid",
+            {"xp": val, "uid": player.uid},
+        )
 
         state_ctx = set_boss_cooldown(state_ctx, boss.boss_id, now)
         player.state_context = json_module.dumps(state_ctx)
@@ -915,6 +920,7 @@ async def resolve_battle(bot, player: Player, boss: Boss, forced: bool = False, 
 
         # Prestige бонус для XP (включая пассивки)
         from plugins.vip_shop import has_prestige_xp_bonus, get_prestige_xp_multiplier
+        additional_xp = 0
         if has_prestige_xp_bonus(player):
             prestige_mult = get_prestige_xp_multiplier(player)
             additional_xp = int(val * (prestige_mult - 1.0))
@@ -931,8 +937,22 @@ async def resolve_battle(bot, player: Player, boss: Boss, forced: bool = False, 
         if total_gold > 0:
             player.gold += total_gold
 
-        # ponytail: второй update — награды выше (пассивки/престиж/gold) применяются после первого сохранения
-        await player.update(_columns=["gold", "nextxp", "wins", "hp", "mp"])
+        # ponytail: награды выше (пассивки/престиж/gold) применяются атомарными дельтами
+        if bonus_xp > 0:
+            await database.execute(
+                "UPDATE users SET nextxp = CASE WHEN nextxp - :xp > currentxp + 1 THEN nextxp - :xp ELSE currentxp + 1 END WHERE uid = :uid",
+                {"xp": bonus_xp, "uid": player.uid},
+            )
+        if additional_xp > 0:
+            await database.execute(
+                "UPDATE users SET nextxp = CASE WHEN nextxp - :xp > currentxp + 1 THEN nextxp - :xp ELSE currentxp + 1 END WHERE uid = :uid",
+                {"xp": additional_xp, "uid": player.uid},
+            )
+        if total_gold > 0:
+            await database.execute(
+                "UPDATE users SET gold = gold + :g WHERE uid = :uid",
+                {"g": total_gold, "uid": player.uid},
+            )
 
         try:
             from game.quests import on_boss_defeated
@@ -1012,6 +1032,10 @@ async def resolve_battle(bot, player: Player, boss: Boss, forced: bool = False, 
         if not protect_active:
             player.nextxp += val
             player.totalxplost += val
+            await database.execute(
+                "UPDATE users SET nextxp = nextxp + :val, totalxplost = totalxplost + :val WHERE uid = :uid",
+                {"val": val, "uid": player.uid},
+            )
 
         if player.level > 1:
             player.level -= 1
@@ -1034,7 +1058,7 @@ async def resolve_battle(bot, player: Player, boss: Boss, forced: bool = False, 
             setattr(player, slot_to_downgrade, current_item)
 
         player.sync_max_hp_mp()
-        await player.update(_columns=["nextxp", "totalxplost", "level", "loss",
+        await player.update(_columns=["level", "loss",
                           slot_to_downgrade, "hp", "mp", "max_hp", "max_mp"])
         from game.monsters import invalidate_dps_cache as core_invalidate
         core_invalidate(player.uid)
@@ -1171,7 +1195,14 @@ async def respawn_boss(player: Player, boss_id: str, fight_count: int = 1, lang:
     total_cost = boss.respawn_cost * fight_count
     if player.gold < total_cost:
         return False, f"Нужно {total_cost} золота, у тебя {player.gold}" if lang != "en" else f"Need {total_cost} gold, you have {player.gold}"
-    
+
+    # Атомарное списание: защита от гонок (двойной респаун)
+    res = await database.fetch_val(
+        "UPDATE users SET gold = gold - :cost WHERE uid = :uid AND gold >= :cost RETURNING 1",
+        {"cost": total_cost, "uid": player.uid},
+    )
+    if not res:
+        return False, f"Нужно {total_cost} золота" if lang != "en" else f"Need {total_cost} gold"
     player.gold -= total_cost
     
     player.x = boss.x
@@ -1187,7 +1218,7 @@ async def respawn_boss(player: Player, boss_id: str, fight_count: int = 1, lang:
     from plugins.boss_passives import BossPassiveManager
     BossPassiveManager.clear_boss_passives(boss.boss_id)
     
-    await player.update(_columns=["gold", "x", "y"])
+    await player.update(_columns=["x", "y"])
     await boss.update(_columns=["defeated", "respawn_available", "hp", "max_hp", "mp", "max_mp"])
     
     if lang != "en":

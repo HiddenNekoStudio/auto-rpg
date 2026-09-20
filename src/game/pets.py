@@ -10,7 +10,7 @@ import time
 from pathlib import Path
 
 import config as cfg
-from db import PlayerPet, Player
+from db import PlayerPet, Player, database
 
 PETS_JSON = Path(__file__).parent.parent / "data" / "pets.json"
 
@@ -111,7 +111,14 @@ async def buy_pet(player: Player, pet_id: str) -> tuple[bool, str]:
         )
 
     player.tokens = (player.tokens or 0) - price
-    await player.update(_columns=["tokens"])
+    res = await database.fetch_val(
+        "UPDATE users SET tokens = tokens - :price WHERE uid = :uid AND tokens >= :price RETURNING 1",
+        {"price": price, "uid": player.uid},
+    )
+    if not res:
+        return False, (
+            f"Нужно {price}🪙 токенов" if lang != "en" else f"Need {price}🪙 tokens"
+        )
     await PlayerPet(
         player_uid=player.uid, pet_id=pet_id, level=1, xp=0,
         equipped=False, source="shop", acquired_at=int(time.time()),
@@ -171,8 +178,13 @@ async def evolve_pet(player, pet_id: str) -> tuple[bool, str]:
         return False, f"Нужно {cfg.PET_EVOLVE_TOKENS} 🪙" if lang != "en" else f"Need {cfg.PET_EVOLVE_TOKENS} 🪙"
 
     was_equipped = pet.equipped
+    res = await database.fetch_val(
+        "UPDATE users SET tokens = tokens - :price WHERE uid = :uid AND tokens >= :price RETURNING 1",
+        {"price": cfg.PET_EVOLVE_TOKENS, "uid": player.uid},
+    )
+    if not res:
+        return False, f"Нужно {cfg.PET_EVOLVE_TOKENS} 🪙" if lang != "en" else f"Need {cfg.PET_EVOLVE_TOKENS} 🪙"
     player.tokens = (player.tokens or 0) - cfg.PET_EVOLVE_TOKENS
-    await player.update(_columns=["tokens"])
     await pet.delete()
     new_pet = await PlayerPet.objects.create(
         player_uid=player.uid, pet_id=target, level=1, xp=0,

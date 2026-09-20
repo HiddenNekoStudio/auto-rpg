@@ -7,7 +7,7 @@ import time
 from typing import Optional
 
 import config as cfg
-from db import Player, PlayerQuest
+from db import Player, PlayerQuest, database
 from data.quest_config import (
     QuestCategory,
     calculate_rewards,
@@ -439,7 +439,11 @@ async def complete_quest(player: Player, quest: PlayerQuest, bot=None):
     tokens = getattr(quest, "bonus_tokens", 0) or 0
     if tokens:
         player.tokens = (player.tokens or 0) + tokens
-    await player.update(_columns=["totalxp", "gold", "totalquests", "tokens"])
+    await database.execute(
+        "UPDATE users SET totalxp = totalxp + :xp, gold = gold + :gold, "
+        "totalquests = totalquests + 1, tokens = tokens + :tok WHERE uid = :uid",
+        {"xp": xp, "gold": gold, "tok": tokens, "uid": player.uid},
+    )
     
     quest.status = "completed"
     quest.completed_at = int(time.time())
@@ -485,7 +489,11 @@ async def fail_quest(player: Player, quest: PlayerQuest, apply_penalty: bool = T
         player.totalxp = max(0, player.totalxp - xp_penalty)
         player.gold = max(0, player.gold - gold_penalty)
         
-        await player.update(_columns=["totalxp", "gold"])
+        await database.execute(
+            "UPDATE users SET totalxp = CASE WHEN totalxp - :xp < 0 THEN 0 ELSE totalxp - :xp END, "
+            "gold = CASE WHEN gold - :gold < 0 THEN 0 ELSE gold - :gold END WHERE uid = :uid",
+            {"xp": xp_penalty, "gold": gold_penalty, "uid": player.uid},
+        )
     
     quest.status = "failed"
     await quest.update()
@@ -525,7 +533,7 @@ async def abandon_quest(player: Player, quest: PlayerQuest):
 # ═══════════════════════════════════════════════════════════════
 
 async def check_expired_quests():
-    """Проверяет истёкшие квесты"""
+    """Удаляет истёкшие активные квесты"""
     
     now = int(time.time())
     
@@ -534,10 +542,15 @@ async def check_expired_quests():
         expires_at__lt=now
     ).all()
     
+    count = 0
     for quest in expired:
-        player = await Player.objects.get_or_none(uid=quest.player_uid)
-        if player:
-            await fail_quest(player, quest)
+        await quest.delete()
+        count += 1
+    
+    if count:
+        logging.info(f"Deleted {count} expired quests")
+    
+    return count
 
 
 # ═══════════════════════════════════════════════════════════════

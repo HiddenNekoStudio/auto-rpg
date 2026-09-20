@@ -98,3 +98,20 @@ async def test_on_win_streak_progresses_both(mock_pq, mock_notify, mock_fail, mo
     assert streak_q.progress == 3
     assert survive_q.progress == 1
     mock_complete.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+@patch("game.quests.PlayerQuest")
+async def test_check_expired_quests_deletes_expired_only(mock_pq):
+    expired = _fake_quest(category="kill_monster", expires_at=int(time.time()) - 100)
+    valid = _fake_quest(category="kill_monster", expires_at=int(time.time()) + 3600)
+    expired.delete = AsyncMock()
+    valid.delete = AsyncMock()
+    mock_pq.objects.filter.return_value.all = AsyncMock(return_value=[expired])
+
+    from game.quests import check_expired_quests
+    count = await check_expired_quests()
+
+    assert count == 1
+    expired.delete.assert_awaited_once()
+    valid.delete.assert_not_awaited()

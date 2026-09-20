@@ -47,8 +47,10 @@ def test_bonus_cache_helpers_empty():
 
 
 @pytest.mark.asyncio
+@patch("game.pets.database")
 @patch("game.pets.PlayerPet")
-async def test_buy_pet_success(mock_model):
+async def test_buy_pet_success(mock_model, mock_db):
+    mock_db.fetch_val = AsyncMock(return_value=1)
     mock_model.objects.filter.return_value.get_or_none = AsyncMock(return_value=None)
     mock_model.return_value.save = AsyncMock()
     p = _fake_player(tokens=10)
@@ -176,8 +178,10 @@ def test_can_evolve():
 
 
 @pytest.mark.asyncio
+@patch("game.pets.database")
 @patch("game.pets.PlayerPet")
-async def test_evolve_pet_success(mock_model):
+async def test_evolve_pet_success(mock_model, mock_db):
+    mock_db.fetch_val = AsyncMock(return_value=1)
     from game.pets import evolve_pet
     pet = _fake_pet(pet_id="kitty", level=30, equipped=True)
     mock_model.objects.filter.return_value.get_or_none = AsyncMock(return_value=pet)

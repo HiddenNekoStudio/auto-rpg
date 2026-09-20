@@ -31,20 +31,24 @@ def _fake_player(**kw):
 
 
 @pytest.mark.asyncio
+@patch("handlers.daily.database", new_callable=AsyncMock)
 @patch("handlers.daily.time.time", return_value=float(NOW))
-async def test_claim_first_time(mock_time):
+async def test_claim_first_time(mock_time, mock_db):
+    mock_db.fetch_val = AsyncMock(return_value=1)
     from handlers.daily import _claim
     p = _fake_player()
     msg, credited = await _claim(p, "ru")
     assert credited is True
     assert p.daily_streak == 1
     assert p.tokens == 1
-    p.update.assert_awaited_once()
+    mock_db.fetch_val.assert_awaited_once()
 
 
 @pytest.mark.asyncio
+@patch("handlers.daily.database", new_callable=AsyncMock)
 @patch("handlers.daily.time.time", return_value=float(NOW))
-async def test_claim_streak_continues(mock_time):
+async def test_claim_streak_continues(mock_time, mock_db):
+    mock_db.fetch_val = AsyncMock(return_value=1)
     from handlers.daily import _claim
     p = _fake_player(last_daily_claim=(TODAY - 1) * DAY_SECONDS, daily_streak=2)
     msg, credited = await _claim(p, "ru")
@@ -65,8 +69,10 @@ async def test_claim_same_day_blocked(mock_time):
 
 
 @pytest.mark.asyncio
+@patch("handlers.daily.database", new_callable=AsyncMock)
 @patch("handlers.daily.time.time", return_value=float(NOW))
-async def test_claim_streak_resets_after_gap(mock_time):
+async def test_claim_streak_resets_after_gap(mock_time, mock_db):
+    mock_db.fetch_val = AsyncMock(return_value=1)
     from handlers.daily import _claim
     p = _fake_player(last_daily_claim=(TODAY - 3) * DAY_SECONDS, daily_streak=7)
     msg, credited = await _claim(p, "ru")
@@ -83,8 +89,10 @@ def test_reward_cycle_repeats():
 
 
 @pytest.mark.asyncio
+@patch("handlers.daily.database", new_callable=AsyncMock)
 @patch("handlers.daily.time.time", return_value=float(NOW))
-async def test_offline_bonus_granted(mock_time):
+async def test_offline_bonus_granted(mock_time, mock_db):
+    mock_db.fetch_val = AsyncMock(return_value=1)
     from handlers.daily import _claim
     hours = 7  # >= OFFLINE_BONUS_HOURS (6)
     p = _fake_player(last_idle_at=NOW - hours * 3600)
@@ -94,8 +102,10 @@ async def test_offline_bonus_granted(mock_time):
 
 
 @pytest.mark.asyncio
+@patch("handlers.daily.database", new_callable=AsyncMock)
 @patch("handlers.daily.time.time", return_value=float(NOW))
-async def test_offline_bonus_denied_under_threshold(mock_time):
+async def test_offline_bonus_denied_under_threshold(mock_time, mock_db):
+    mock_db.fetch_val = AsyncMock(return_value=1)
     from handlers.daily import _claim
     hours = 3  # < OFFLINE_BONUS_HOURS
     p = _fake_player(last_idle_at=NOW - hours * 3600)
@@ -125,8 +135,10 @@ def test_clan_formulas():
 
 
 @pytest.mark.asyncio
-async def test_clan_levelup_on_donate():
+@patch("handlers.clans.database", new_callable=AsyncMock)
+async def test_clan_levelup_on_donate(mock_db):
     """Донат капает опыт; при превышении порога — уровень растёт."""
+    mock_db.fetch_val = AsyncMock(return_value=1)
     from handlers.clans import _donate
 
     player = _fake_player(gold=5000)

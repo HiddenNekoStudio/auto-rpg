@@ -8,7 +8,7 @@ from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import Application, CommandHandler, CallbackQueryHandler, ContextTypes
 
 import config as cfg
-from db import Player, PlayerPassive, set_player_optin
+from db import Player, PlayerPassive, set_player_optin, database
 
 from loot import get_item
 from bot import ctime, item_string, format_short
@@ -212,11 +212,13 @@ async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         idle_duration = now - player.idle_since
         idle_xp_gained = player.idle_xp
 
+        level_changed = False
         if idle_xp_gained > 0:
             player.currentxp += idle_xp_gained
             player.totalxp += idle_xp_gained
 
             while player.currentxp >= player.nextxp:
+                level_changed = True
                 player.level += 1
                 player.currentxp -= player.nextxp
                 player.nextxp = cfg.xp_for_level(player.level)
@@ -225,14 +227,34 @@ async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if player.last_idle_at > 0:
             player.last_idle_at = 0
 
+        # Атомарный апдейт: xp начисляется дельтой, idle_xp списывается, тик
+        # (idle_xp + gain) не затирается и не затирает наш накопленный xp.
         player.online = True
         player.lastlogin = now
         player.last_online_at = now
         player.idle_since = 0
         player.idle_xp = 0
-        await player.update(_columns=["currentxp", "totalxp", "level", "nextxp",
-                                       "online", "lastlogin", "idle_since", "idle_xp",
-                                       "last_online_at", "last_idle_at"])
+        await database.execute(
+            "UPDATE users SET "
+            "currentxp = currentxp + :xp, "
+            "totalxp = totalxp + :xp, "
+            "level = CASE WHEN :lv = 1 THEN :level ELSE level END, "
+            "nextxp = CASE WHEN :lv = 1 THEN :nextxp ELSE nextxp END, "
+            "online = TRUE, lastlogin = :now, last_online_at = :now_at, "
+            "idle_since = 0, idle_xp = 0, "
+            "last_idle_at = CASE WHEN :cl = 1 THEN 0 ELSE last_idle_at END "
+            "WHERE uid = :uid",
+            {
+                "xp": idle_xp_gained,
+                "lv": 1 if level_changed else 0,
+                "level": player.level,
+                "nextxp": player.nextxp,
+                "now": now,
+                "now_at": now,
+                "cl": 1 if player.last_idle_at == 0 else 0,
+                "uid": player.uid,
+            },
+        )
 
         if idle_xp_gained > 0:
             text = t(lang, "idle_return",
@@ -819,6 +841,17 @@ async def callback_set_race(update: Update, context: ContextTypes.DEFAULT_TYPE):
             )
             return
         player.tokens -= cost
+        res = await database.fetch_val(
+            "UPDATE users SET tokens = tokens - :cost WHERE uid = :uid AND tokens >= :cost RETURNING 1",
+            {"cost": cost, "uid": player.uid},
+        )
+        if not res:
+            await query.answer(
+                f"🎫 Not enough tokens! Need {cost}" if lang == "en"
+                else f"🎫 Не хватает токенов! Нужно {cost}",
+                show_alert=True,
+            )
+            return
 
         old_passive_id = cfg.RACIAL_PASSIVES.get(player.race)
         if old_passive_id:
@@ -838,7 +871,7 @@ async def callback_set_race(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     player.race = race
     player.sync_max_hp_mp()
-    await player.update(_columns=["race", "tokens", "max_hp", "max_mp"])
+    await player.update(_columns=["race", "max_hp", "max_mp"])
 
     # Grant racial passive (auto-equipped)
     from game.skills.passives import PassiveRegistry
@@ -1365,8 +1398,14 @@ async def callback_pull(update: Update, context: ContextTypes.DEFAULT_TYPE):
         item, slot, replaced = await get_item(player)
         upgrade = t(lang, "loot_upgrade") if replaced else ""
         text += f"{item_string(item, lang)}{upgrade}\n"
+    res = await database.fetch_val(
+        "UPDATE users SET gold = gold - :amount WHERE uid = :uid AND gold >= :amount RETURNING 1",
+        {"amount": amount, "uid": player.uid},
+    )
+    if not res:
+        await query.answer(t(lang, "no_gold"), show_alert=True)
+        return
     player.gold = max(0, player.gold - amount)
-    await player.update(_columns=["gold"])
     keyboard = InlineKeyboardMarkup([[
         InlineKeyboardButton(t(lang, "loot_more"), callback_data="menu_pull"),
         InlineKeyboardButton(t(lang, "btn_profile"), callback_data="menu_profile"),
@@ -1511,8 +1550,14 @@ async def cmd_pull(update: Update, context: ContextTypes.DEFAULT_TYPE):
         item, slot, replaced = await get_item(player)
         upgrade = t(lang, "loot_upgrade") if replaced else ""
         text += f"{item_string(item, lang)}{upgrade}\n"
+    res = await database.fetch_val(
+        "UPDATE users SET gold = gold - :amount WHERE uid = :uid AND gold >= :amount RETURNING 1",
+        {"amount": amount, "uid": player.uid},
+    )
+    if not res:
+        await update.message.reply_text(t(lang, "no_gold"))
+        return
     player.gold -= amount
-    await player.update(_columns=["gold"])
     keyboard = InlineKeyboardMarkup([[
         InlineKeyboardButton(t(lang, "loot_more"),   callback_data="menu_pull"),
         InlineKeyboardButton(t(lang, "btn_profile"), callback_data="menu_profile"),
@@ -1697,7 +1742,14 @@ async def callback_prestige(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await query.answer(f"{'No points available' if lang == 'en' else 'Нет доступных очков'}", show_alert=True)
             return
         player.prestige_xp_level = (player.prestige_xp_level or 0) + 1
-        await player.update(_columns=["prestige_xp_level"])
+        res = await database.fetch_val(
+            "UPDATE users SET prestige_xp_level = prestige_xp_level + 1 "
+            "WHERE uid = :uid AND prestige_xp_level + prestige_gold_level < prestige_count RETURNING 1",
+            {"uid": player.uid},
+        )
+        if not res:
+            await query.answer(f"{'No points available' if lang == 'en' else 'Нет доступных очков'}", show_alert=True)
+            return
         per_level, max_bonus = get_prestige_bonus()
         bonus = min(player.prestige_xp_level * per_level, max_bonus)
         text = (
@@ -1717,7 +1769,14 @@ async def callback_prestige(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await query.answer(f"{'No points available' if lang == 'en' else 'Нет доступных очков'}", show_alert=True)
             return
         player.prestige_gold_level = (player.prestige_gold_level or 0) + 1
-        await player.update(_columns=["prestige_gold_level"])
+        res = await database.fetch_val(
+            "UPDATE users SET prestige_gold_level = prestige_gold_level + 1 "
+            "WHERE uid = :uid AND prestige_xp_level + prestige_gold_level < prestige_count RETURNING 1",
+            {"uid": player.uid},
+        )
+        if not res:
+            await query.answer(f"{'No points available' if lang == 'en' else 'Нет доступных очков'}", show_alert=True)
+            return
         per_level, max_bonus = get_prestige_bonus()
         bonus = min(player.prestige_gold_level * per_level, max_bonus)
         text = (
@@ -1737,7 +1796,13 @@ async def callback_prestige(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await query.answer(f"{'Not enough tokens' if lang == 'en' else 'Не хватает токенов'}", show_alert=True)
             return
         player.tokens -= price
-        await player.update(_columns=["tokens"])
+        res = await database.fetch_val(
+            "UPDATE users SET tokens = tokens - :price WHERE uid = :uid AND tokens >= :price RETURNING 1",
+            {"price": price, "uid": player.uid},
+        )
+        if not res:
+            await query.answer(f"{'Not enough tokens' if lang == 'en' else 'Не хватает токенов'}", show_alert=True)
+            return
         text, keyboard = await buy_prestige(player, lang)
         await safe_edit(query, text, parse_mode="HTML", reply_markup=keyboard)
         return

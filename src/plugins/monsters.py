@@ -16,7 +16,7 @@ from typing import Any, Optional
 from telegram import Bot
 
 import config as cfg
-from db import Player
+from db import Player, database
 from bot import ctime, item_string
 from core.cache import TTLCache
 from core.monsters import monster_list, monster_list_en
@@ -28,11 +28,9 @@ import game.combat as game_combat
 
 logger = logging.getLogger(__name__)
 
-# Module-level DPS cache for cross-module access (5 min TTL)
-_dps_cache: 'TTLCache[int]' = TTLCache(ttl=300, maxsize=10000)
-
-def invalidate_dps_cache(uid: int) -> None:
-    _dps_cache.delete(str(uid))
+# DPS — единый расчёт/кэш в core/dps.py. Ре-экспорт для существующих импортов
+# (game/hunting.py делает `from plugins.monsters import invalidate_dps_cache`).
+from core.dps import get_total_dps, invalidate_dps_cache  # noqa: E402,F401
 
 # Активные навыки монстров для раундового боя
 MONSTER_COMBAT_SKILLS = [
@@ -131,17 +129,7 @@ class MonsterEncountersPlugin(GamePlugin):
         return None
 
     def _get_total_dps(self, player: Player) -> int:
-        cache_key = str(player.uid)
-        cached = _dps_cache.get(cache_key)
-        if cached is not None:
-            return cached
-        total = player.get_dps()
-        from game.classes import get_class_bonus
-        cls_bonus = get_class_bonus(player.job)
-        if cls_bonus.get("dps_pct"):
-            total = int(total * (1 + cls_bonus["dps_pct"] / 100))
-        _dps_cache.set(cache_key, total)
-        return total
+        return get_total_dps(player)
 
     async def _pet_combat(self, player: Player) -> tuple[int, str]:
         try:
@@ -995,8 +983,7 @@ class MonsterEncountersPlugin(GamePlugin):
         region_mult, region_emoji = await self._get_region_bonus(player)
 
         # Build update columns list
-        update_cols = ["nextxp", "totalxplost", "gold", "hp", "mp", "max_hp", "max_mp",
-                       "fight_streak", "monster_kills", "monster_deaths"]
+        update_cols = ["hp", "mp", "max_hp", "max_mp", "monster_deaths"]
         if defense_changed:
             update_cols.append("defense")
 
@@ -1057,6 +1044,13 @@ class MonsterEncountersPlugin(GamePlugin):
                 gold_reward = int(gold_reward * prestige_mult)
 
             player.gold += gold_reward
+
+            await database.execute(
+                "UPDATE users SET nextxp = CASE WHEN nextxp - :cut > currentxp + 1 THEN nextxp - :cut ELSE currentxp + 1 END, "
+                "gold = gold + :gold, fight_streak = fight_streak + 1, "
+                "monster_kills = monster_kills + 1 WHERE uid = :uid",
+                {"cut": effective_val + bonus_xp, "gold": gold_reward, "uid": player.uid},
+            )
 
             # Loot (boss = guaranteed, read from config)
             force_loot = vmult.get("loot_guaranteed", False) if vmult else False
@@ -1150,6 +1144,16 @@ class MonsterEncountersPlugin(GamePlugin):
                 if not protect_active:
                     player.nextxp += val
                     player.totalxplost += val
+                    await database.execute(
+                        "UPDATE users SET nextxp = nextxp + :val, totalxplost = totalxplost + :val, "
+                        "fight_streak = 0 WHERE uid = :uid",
+                        {"val": val, "uid": player.uid},
+                    )
+                else:
+                    await database.execute(
+                        "UPDATE users SET fight_streak = 0 WHERE uid = :uid",
+                        {"uid": player.uid},
+                    )
 
                 if lang == "en":
                     penalty_line = (

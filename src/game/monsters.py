@@ -18,7 +18,7 @@ import random
 from telegram import Bot
 
 import config as cfg
-from db import Player
+from db import Player, database
 from bot import ctime, send_to_players
 from core.cache import TTLCache
 from core.monsters import monster_list, monster_list_en
@@ -30,48 +30,9 @@ _encounter_cooldown = TTLCache(ttl=2.0, maxsize=10000)
 # Серия побед игроков (win_streak для квестов)
 _win_streak = {}
 
-# Кэш DPS — TTL-кеш вместо plain dict (предотвращает утечку памяти)
-_dps_cache: TTLCache = TTLCache(ttl=300, maxsize=10000)
-
-
-def get_total_dps(player: Player, use_cache: bool = True) -> int:
-    """Кэшированный расчёт DPS. Инвалидируется при обновлении снаряжения."""
-    cache_key = player.uid
-    
-    if use_cache:
-        cached = _dps_cache.get(cache_key)
-        if cached is not None:
-            return cached
-    
-    total = sum(
-        item.get("dps", 0)
-        for slot in cfg.WEAPON_SLOTS
-        if isinstance(item := getattr(player, slot, None), dict)
-    )
-    
-    from game.races import get_race_dps_mult
-    total = int(total * get_race_dps_mult(player.race))
-
-    # Воин: +10% DPS
-    from game.classes import get_class_bonus
-    cls_bonus = get_class_bonus(player.job)
-    if cls_bonus.get("dps_pct"):
-        total = int(total * (1 + cls_bonus["dps_pct"] / 100))
-
-    # Сетовые бонусы
-    total = int(total * (1 + player._get_set_sum("dps_pct") / 100))
-
-    # Камни в гнёздах
-    from game.gems import get_socket_bonuses_sync
-    total = int(total * (1 + get_socket_bonuses_sync(player)["dps_pct"] / 100))
-
-    _dps_cache.set(cache_key, total)
-    return total
-
-
-def invalidate_dps_cache(uid: int) -> None:
-    """Инвалидирует кэш DPS при смене снаряжения."""
-    _dps_cache.delete(uid)
+# DPS считается в core/dps.py — единый расчёт и единый кэш на весь проект.
+# Ре-экспорт для обратной совместимости с существующими импортами.
+from core.dps import get_total_dps, invalidate_dps_cache  # noqa: E402,F401
 
 
 async def encounter_one(bot: Bot, player: Player, monster: str, monster_level: int) -> None:
@@ -186,6 +147,9 @@ async def encounter_one(bot: Bot, player: Player, monster: str, monster_level: i
     smite_chance = (random.random() <= 0.10 and player.align == 1) or archer_crit
     smite_str = "\n✨ *СМАЙТ!* " if smite_chance and lang != "en" else ("\n✨ *SMITE!* " if smite_chance else "")
 
+    _deaths = 0
+    _pen_xp = 0
+
     if player_won:
         player.monster_kills = (player.monster_kills or 0) + 1
         from game.races import get_race_xp_mult
@@ -298,12 +262,14 @@ async def encounter_one(bot: Bot, player: Player, monster: str, monster_level: i
                 ])
         else:
             player.monster_deaths = (player.monster_deaths or 0) + 1
+            _deaths = 1
 
             from plugins.vip_shop import has_active_protect
             protect_active = has_active_protect(player)
             if not protect_active:
                 player.nextxp += val
                 player.totalxplost += val
+                _pen_xp = val
 
             round_lines = []
             for r in rounds:
@@ -357,7 +323,19 @@ async def encounter_one(bot: Bot, player: Player, monster: str, monster_level: i
 
             _win_streak[player.uid] = 0
 
-    await player.update(_columns=["nextxp", "totalxplost", "gold", "hp", "monster_kills", "monster_deaths"])
+    if player_won:
+        await database.execute(
+            "UPDATE users SET nextxp = CASE WHEN nextxp - :xp > currentxp + 1 THEN nextxp - :xp ELSE currentxp + 1 END, "
+            "gold = gold + :gold, monster_kills = monster_kills + 1 WHERE uid = :uid",
+            {"xp": effective_val, "gold": gold_reward, "uid": player.uid},
+        )
+    else:
+        sql = "UPDATE users SET monster_deaths = monster_deaths + :d"
+        params = {"d": _deaths, "uid": player.uid}
+        if _pen_xp:
+            sql += ", nextxp = nextxp + :pen, totalxplost = totalxplost + :pen"
+            params["pen"] = _pen_xp
+        await database.execute(sql + " WHERE uid = :uid", params)
 
     from game.quests import on_win_streak, on_death
     if player_won:

@@ -10,7 +10,7 @@ import time as time_module
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import Application, CallbackQueryHandler, ContextTypes
 
-from db import Player
+from db import Player, database
 from ui.icons import SEP
 from core.telegram_utils import safe_edit
 import config as cfg
@@ -210,6 +210,9 @@ async def handle_vip_callback(update: Update, context: ContextTypes.DEFAULT_TYPE
     await query.answer()
 
     user = query.from_user
+    from handlers.user import check_callback_rate
+    if not check_callback_rate(user.id):
+        return
     player = await Player.objects.get_or_none(uid=user.id)
     lang = (player.lang or "ru") if player else "ru"
 
@@ -247,39 +250,36 @@ async def handle_vip_callback(update: Update, context: ContextTypes.DEFAULT_TYPE
             await query.answer("🤖 Already bought!" if lang == "en" else "🤖 Уже куплено!", show_alert=True)
             return
 
-        # Списание токенов
+        # Списание токенов (атомарно: защита от двойной покупки)
+        res = await database.fetch_val(
+            "UPDATE users SET tokens = tokens - :price WHERE uid = :uid AND tokens >= :price RETURNING 1",
+            {"price": price, "uid": player.uid},
+        )
+        if not res:
+            await query.answer(vip_t(lang, "vip_not_enough_tokens"), show_alert=True)
+            return
         player.tokens -= price
-        await player.update(_columns=["tokens"])
 
         # === XP BOOST ===
         if item_type == "xp_boost":
             duration = item_data.get('duration', 3600)
             player.xp_boost_until = max(player.xp_boost_until or 0, int(time_module.time())) + duration
             await player.update(_columns=["xp_boost_until"])
-            name_ru = player.name or ""
-            name_en = player.name_en or name_ru
-            display_name = name_en if lang == "en" else name_ru
-            text = vip_t(lang, "vip_bought_xp_boost", name=display_name, duration=duration // 60)
+            text = vip_t(lang, "vip_bought_xp_boost", name=player.name or "", duration=duration // 60)
 
         # === SPEED BOOST ===
         elif item_type == "speed_boost":
             duration = item_data.get('duration', 1800)
             player.speed_boost_until = max(player.speed_boost_until or 0, int(time_module.time())) + duration
             await player.update(_columns=["speed_boost_until"])
-            name_ru = player.name or ""
-            name_en = player.name_en or name_ru
-            display_name = name_en if lang == "en" else name_ru
-            text = vip_t(lang, "vip_bought_speed_boost", name=display_name, duration=duration // 60)
+            text = vip_t(lang, "vip_bought_speed_boost", name=player.name or "", duration=duration // 60)
 
         # === PROTECT ===
         elif item_type == "protect":
             duration = item_data.get('duration', 3600)
             player.protect_until = max(player.protect_until or 0, int(time_module.time())) + duration
             await player.update(_columns=["protect_until"])
-            name_ru = player.name or ""
-            name_en = player.name_en or name_ru
-            display_name = name_en if lang == "en" else name_ru
-            text = vip_t(lang, "vip_bought_protect", name=display_name, duration=duration // 60)
+            text = vip_t(lang, "vip_bought_protect", name=player.name or "", duration=duration // 60)
 
         # === AUTO QUEST UNLOCK ===
         elif item_type == "auto_quest":

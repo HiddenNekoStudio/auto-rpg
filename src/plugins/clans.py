@@ -72,7 +72,7 @@ class ClansPlugin(GamePlugin):
         logger.debug(f"Player {player_uid} donated {amount} to clan")
         return f"donated:{amount}"
     
-    async def on_game_tick(self, tick_number: int) -> Optional[str]:
+    async def on_game_tick(self, tick_number: int, bot=None) -> Optional[str]:
         """Игровой тик — проверка клановых событий."""
         # Например, каждые 100 тиков — обновление клановых квестов
         if tick_number % 100 == 0:

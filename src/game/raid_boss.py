@@ -8,7 +8,7 @@ import logging
 import time
 
 import config as cfg
-from db import Player, RaidBoss, RaidBossHit
+from db import Player, RaidBoss, RaidBossHit, database
 
 BOSS_NAMES_RU = ["Разрушитель Миров", "Король Хаоса", "Вечный Мрак", "Пожиратель Звёзд"]
 BOSS_NAMES_EN = ["Worldbreaker", "Chaos King", "Eternal Dark", "Star Devourer"]
@@ -76,7 +76,10 @@ async def award(bot, boss: RaidBoss) -> None:
         gold = cfg.RAID_BOSS_KILL_GOLD_BASE + int(cfg.RAID_BOSS_KILL_GOLD * h.damage / total)
         player.tokens = (player.tokens or 0) + cfg.RAID_BOSS_KILL_TOKENS
         player.gold += gold
-        await player.update(_columns=["tokens", "gold"])
+        await database.execute(
+            "UPDATE users SET tokens = tokens + :tok, gold = gold + :gold WHERE uid = :uid",
+            {"tok": cfg.RAID_BOSS_KILL_TOKENS, "gold": gold, "uid": player.uid},
+        )
         uids.append(player.uid)
 
     if uids and bot:

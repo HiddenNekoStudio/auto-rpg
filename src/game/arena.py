@@ -12,7 +12,7 @@ import logging
 import time
 
 import config as cfg
-from db import Player, ArenaRun
+from db import Player, ArenaRun, database
 from game.hunting import generate_hunt_monster, make_miniboss, auto_resolve_hunt_battle, calc_hunt_reward
 
 logger = logging.getLogger(__name__)
@@ -135,7 +135,13 @@ async def process_arena_tick(bot, player: Player, run: ArenaRun) -> None:
     run.wave = wave + 1
     run.best_wave = max(run.best_wave, wave)
     await _save(run, data, extra_cols=["hp", "mp"])
-    await player.update(_columns=["hp", "mp", "nextxp", "gold", "tokens", "monster_kills"])
+    await player.update(_columns=["hp", "mp"])
+    await database.execute(
+        "UPDATE users SET nextxp = CASE WHEN nextxp - :xp > currentxp + 1 THEN nextxp - :xp ELSE currentxp + 1 END, "
+        "gold = gold + :gold, tokens = tokens + :tok, "
+        "monster_kills = monster_kills + 1 WHERE uid = :uid",
+        {"xp": xp, "gold": gold, "tok": cfg.ARENA_TOKEN_PER_WAVE, "uid": player.uid},
+    )
     await _notify(bot, player, "wave", monster, data)
 
 

@@ -11,6 +11,7 @@ from typing import Optional, Any
 from dataclasses import dataclass
 
 from plugins.base import GamePlugin, PluginMetadata
+from plugins.registry import PluginRegistry
 
 logger = logging.getLogger(__name__)
 
@@ -249,9 +250,14 @@ class BossPassiveManager:
         return " | ".join(lines)
 
 
+@PluginRegistry.register(
+    "boss_passives",
+    description="Пассивные навыки боссов — рандомные эффекты при встрече",
+    author="AutoRPG",
+)
 class BossPassivesPlugin(GamePlugin):
     metadata = METADATA
-    
+
     async def on_load(self) -> None:
         logger.info("Boss passives plugin loaded")
     
@@ -268,7 +274,7 @@ class BossPassivesPlugin(GamePlugin):
     ) -> Optional[str]:
         return None
     
-    async def on_game_tick(self, tick_number: int) -> Optional[str]:
+    async def on_game_tick(self, tick_number: int, bot=None) -> Optional[str]:
         return None
 
 

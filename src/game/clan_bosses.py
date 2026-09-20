@@ -8,7 +8,7 @@ import logging
 import time
 
 import config as cfg
-from db import Player, Clan, ClanMember, ClanBoss, ClanBossHit
+from db import Player, Clan, ClanMember, ClanBoss, ClanBossHit, database
 
 BOSS_NAMES_RU = ["Теневой Титан", "Ледяной Колосс", "Пожиратель Душ", "Гниющий Король", "Бездна"]
 BOSS_NAMES_EN = ["Shadow Titan", "Frozen Colossus", "Soul Devourer", "Rotting King", "Abyss"]
@@ -89,7 +89,10 @@ async def _award(bot, boss: ClanBoss) -> None:
         gold = cfg.CLAN_BOSS_KILL_GOLD_BASE + int(cfg.CLAN_BOSS_KILL_GOLD * h.damage / total)
         player.tokens = (player.tokens or 0) + cfg.CLAN_BOSS_KILL_TOKENS
         player.gold += gold
-        await player.update(_columns=["tokens", "gold"])
+        await database.execute(
+            "UPDATE users SET tokens = tokens + :tok, gold = gold + :gold WHERE uid = :uid",
+            {"tok": cfg.CLAN_BOSS_KILL_TOKENS, "gold": gold, "uid": player.uid},
+        )
         uids.append(player.uid)
 
     clan = await Clan.objects.get_or_none(id=boss.clan_id)

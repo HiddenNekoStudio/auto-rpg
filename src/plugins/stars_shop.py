@@ -11,7 +11,9 @@ from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import Application, CallbackQueryHandler, CommandHandler, PreCheckoutQueryHandler, MessageHandler, ContextTypes
 from telegram.ext import filters as Filters
 
-from db import Player, StarPurchase
+from sqlalchemy.exc import IntegrityError
+
+from db import Player, StarPurchase, database
 
 logger = logging.getLogger(__name__)
 
@@ -84,6 +86,9 @@ async def handle_stars_callback(update: Update, context: ContextTypes.DEFAULT_TY
     await query.answer()
     
     user = query.from_user
+    from handlers.user import check_callback_rate
+    if not check_callback_rate(user.id):
+        return
     player = await Player.objects.get_or_none(uid=user.id)
     lang = (player.lang or "ru") if player else "ru"
     
@@ -177,6 +182,10 @@ async def on_pre_checkout(update: Update, context: ContextTypes.DEFAULT_TYPE):
         user_id = int(parts[1])
         tokens = int(parts[2])
 
+        if query.from_user.id != user_id:
+            await query.answer(answer_text="Payment sender mismatch" if lang == "en" else "Плательщик не совпадает", success=False)
+            return
+
         player = await Player.objects.get_or_none(uid=user_id)
         if player:
             lang = player.lang or "ru"
@@ -221,7 +230,12 @@ async def on_successful_payment(update: Update, context: ContextTypes.DEFAULT_TY
         user_id = int(parts[1])
         tokens = int(parts[2])
         charge_id = payment.telegram_payment_charge_id
-        
+
+        if message.from_user.id != user_id:
+            logger.warning(f"Payment sender mismatch: from={message.from_user.id} payload_uid={user_id}")
+            await message.reply_text("❌ Payment sender mismatch." if lang == "en" else "❌ Плательщик не совпадает.")
+            return
+
         player = await Player.objects.get_or_none(uid=user_id)
         if not player:
             logger.error(f"Player not found for payment: user_id={user_id}")
@@ -229,18 +243,28 @@ async def on_successful_payment(update: Update, context: ContextTypes.DEFAULT_TY
             return
         
         lang = player.lang or "ru"
-        
+
+        try:
+            async with database.transaction():
+                await StarPurchase.objects.create(
+                    user_id=user_id,
+                    tokens_amount=tokens,
+                    stars_amount=tokens * get_stars_rate(),
+                    telegram_payment_charge_id=charge_id,
+                    purchased_at=int(time_module.time()),
+                    created_at=int(time_module.time())
+                )
+                await database.execute(
+                    "UPDATE users SET tokens = tokens + :tokens WHERE uid = :uid",
+                    {"tokens": tokens, "uid": user_id},
+                )
+        except IntegrityError:
+            logger.warning(f"Duplicate payment charge ignored: charge={charge_id} user={user_id}")
+            await message.reply_text("✅ Payment already processed." if lang == "en" else "✅ Платёж уже обработан.")
+            return
+
         player.tokens += tokens
-        await player.update(_columns=["tokens"])
-        
-        await StarPurchase.objects.create(
-            user_id=user_id,
-            tokens_amount=tokens,
-            stars_amount=tokens * get_stars_rate(),
-            telegram_payment_charge_id=charge_id,
-            purchased_at=int(time_module.time()),
-            created_at=int(time_module.time())
-        )
+        player = await Player.objects.get_or_none(uid=user_id)
         
         text = stars_t(lang, "starshop_bought", tokens=tokens, total_tokens=player.tokens)
         await message.reply_text(text, parse_mode="HTML")

@@ -66,8 +66,8 @@ async def apply_gem(owner, slot: str) -> tuple[bool, str]:
     item["socketed"] = socketed
     setattr(owner, slot, json.dumps(item))
     gem.equipped = True
-    await gem.update()
-    await owner.update()
+    await gem.update(_columns=["equipped"])
+    await owner.update(_columns=[slot])
     return True, "ok"
 
 
@@ -85,7 +85,7 @@ async def extract_gem(owner, slot: str, idx: int) -> tuple[bool, str]:
     setattr(owner, slot, json.dumps(item))
     from db import PlayerGem
     await PlayerGem.objects.create(player_uid=owner.uid, gem_id=gem_id)
-    await owner.update()
+    await owner.update(_columns=[slot])
     return True, "ok"
 
 

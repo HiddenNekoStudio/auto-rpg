@@ -1,0 +1,6 @@
+# Инструменты разработки и тестов (в прод-образ не ставятся).
+-r requirements.txt
+
+pytest>=8.0.0
+pytest-asyncio>=0.23.0
+pytest-cov>=5.0.0

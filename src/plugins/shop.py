@@ -9,7 +9,7 @@ import logging
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import Application, CallbackQueryHandler, ContextTypes
 
-from db import Player
+from db import Player, database
 from loot import get_item
 from bot import item_string
 
@@ -129,6 +129,9 @@ async def handle_shop_callback(update: Update, context: ContextTypes.DEFAULT_TYP
     await query.answer()
 
     user = query.from_user
+    from handlers.user import check_callback_rate
+    if not check_callback_rate(user.id):
+        return
     player = await Player.objects.get_or_none(uid=user.id)
     lang = (player.lang or "ru") if player else "ru"
     from core.telegram_utils import safe_edit
@@ -160,8 +163,14 @@ async def handle_shop_callback(update: Update, context: ContextTypes.DEFAULT_TYP
             await query.answer(shop_t(lang, "shop_not_enough_gold"), show_alert=True)
             return
 
+        res = await database.fetch_val(
+            "UPDATE users SET gold = gold - :price WHERE uid = :uid AND gold >= :price RETURNING 1",
+            {"price": price, "uid": player.uid},
+        )
+        if not res:
+            await query.answer(shop_t(lang, "shop_not_enough_gold"), show_alert=True)
+            return
         player.gold -= price
-        await player.update(_columns=["gold"])
 
         chest_name = shop_t(lang, f"shop_chest_{chest_type}")
         emoji = chest.get('emoji', '📦')

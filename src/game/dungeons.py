@@ -13,7 +13,7 @@ import time
 from pathlib import Path
 
 import config as cfg
-from db import Player, DungeonRun
+from db import Player, DungeonRun, database
 from game.hunting import generate_hunt_monster, make_miniboss, auto_resolve_hunt_battle, calc_hunt_reward
 
 logger = logging.getLogger(__name__)
@@ -165,13 +165,24 @@ async def process_dungeon_tick(bot, player: Player, run: DungeonRun) -> None:
         data["tokens"] = cfg.DUNGEON_TOKEN_REWARD
         player.tokens = (player.tokens or 0) + cfg.DUNGEON_TOKEN_REWARD
         await _save(run, data, extra_cols=["hp", "mp"])
-        await player.update(_columns=["hp", "mp", "nextxp", "gold", "tokens", "monster_kills"])
+        await player.update(_columns=["hp", "mp"])
+        await database.execute(
+            "UPDATE users SET nextxp = CASE WHEN nextxp - :xp > currentxp + 1 THEN nextxp - :xp ELSE currentxp + 1 END, "
+            "gold = gold + :gold, tokens = tokens + :tok, "
+            "monster_kills = monster_kills + 1 WHERE uid = :uid",
+            {"xp": xp, "gold": gold, "tok": cfg.DUNGEON_TOKEN_REWARD, "uid": player.uid},
+        )
         await _notify(bot, player, "won", monster, data)
         return
 
     run.floor = floor + 1
     await _save(run, data, extra_cols=["hp", "mp"])
-    await player.update(_columns=["hp", "mp", "nextxp", "gold", "monster_kills"])
+    await player.update(_columns=["hp", "mp"])
+    await database.execute(
+        "UPDATE users SET nextxp = CASE WHEN nextxp - :xp > currentxp + 1 THEN nextxp - :xp ELSE currentxp + 1 END, "
+        "gold = gold + :gold, monster_kills = monster_kills + 1 WHERE uid = :uid",
+        {"xp": xp, "gold": gold, "uid": player.uid},
+    )
     await _notify(bot, player, "room", monster, data)
 
 

@@ -7,7 +7,7 @@ import random
 from telegram import Bot
 
 import config as cfg
-from db import Player
+from db import Player, database
 from loot import get_item
 from bot import ctime, item_string, send_to_players, readfile
 from i18n import t
@@ -52,7 +52,17 @@ async def randomevent(bot: Bot, player: Player):
         title  = t(lang, "hog_title")
         detail = t(lang, "hog_detail", time=ctime(val, lang), level=player.level + 1, next=ctime(player.nextxp - player.currentxp, lang))
 
-    await player.update(_columns=["nextxp", "totalxplost"])
+    if event_choice == "bevent":
+        await database.execute(
+            "UPDATE users SET nextxp = nextxp + :val, "
+            "totalxplost = totalxplost + :val WHERE uid = :uid",
+            {"val": val, "uid": player.uid},
+        )
+    else:
+        await database.execute(
+            "UPDATE users SET nextxp = CASE WHEN nextxp - :val > currentxp + 1 THEN nextxp - :val ELSE currentxp + 1 END WHERE uid = :uid",
+            {"val": val, "uid": player.uid},
+        )
 
     # NEW QUEST SYSTEM - XP gained (только gain-события, bevent — потеря XP)
     if event_choice != "bevent":

@@ -8,7 +8,7 @@ from pathlib import Path
 from typing import Optional
 
 import config as cfg
-from db import PlayerPassive, Player
+from db import PlayerPassive, Player, database
 
 from .base import (
     PassiveRegistry, PassiveTrigger, PassiveType,
@@ -71,8 +71,13 @@ class PassiveSkillRegistry:
         if player.gold < price:
             return False, f"Нужно {price} золота, у тебя {player.gold}" if lang != "en" else f"Need {price} gold, you have {player.gold}"
         
+        res = await database.fetch_val(
+            "UPDATE users SET gold = gold - :price WHERE uid = :uid AND gold >= :price RETURNING 1",
+            {"price": price, "uid": player.uid},
+        )
+        if not res:
+            return False, f"Нужно {price} золота" if lang != "en" else f"Need {price} gold"
         player.gold -= price
-        await player.update(_columns=["gold"])
         
         new_passive = PlayerPassive(
             player_uid=player.uid,
@@ -126,7 +131,14 @@ class PassiveSkillRegistry:
         passive.level += 1
         passive.xp_progress = 0
 
-        await player.update(_columns=["gold"])
+        res = await database.fetch_val(
+            "UPDATE users SET gold = gold - :cost WHERE uid = :uid AND gold >= :cost RETURNING 1",
+            {"cost": cost, "uid": player.uid},
+        )
+        if not res:
+            return False, (
+                f"Нужно {cost}💰" if lang != "en" else f"Need {cost}💰"
+            )
         await passive.update(_columns=["level", "xp_progress"])
 
         name = effect.get_name(lang)
@@ -297,7 +309,10 @@ class PassiveSkillRegistry:
         
         if total_heal > 0:
             player.hp = min(player.hp + total_heal, player.max_hp)
-            await player.update(_columns=["hp"])
+            await database.execute(
+                "UPDATE users SET hp = CASE WHEN hp + :heal < max_hp THEN hp + :heal ELSE max_hp END WHERE uid = :uid",
+                {"heal": total_heal, "uid": player.uid},
+            )
         
         result.triggered = total_heal > 0 or total_damage_bonus > 0 or total_poison > 0 or result.is_crit
         return result
@@ -449,7 +464,10 @@ class PassiveSkillRegistry:
         
         if total_heal > 0:
             player.hp = min(player.hp + total_heal, player.max_hp)
-            await player.update(_columns=["hp"])
+            await database.execute(
+                "UPDATE users SET hp = CASE WHEN hp + :heal < max_hp THEN hp + :heal ELSE max_hp END WHERE uid = :uid",
+                {"heal": total_heal, "uid": player.uid},
+            )
         
         result.triggered = total_heal > 0
         return result

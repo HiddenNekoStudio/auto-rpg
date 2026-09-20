@@ -14,7 +14,7 @@ from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import Application, CommandHandler, CallbackQueryHandler, ContextTypes, MessageHandler, filters
 
 import config as cfg
-from db import Player, Clan, ClanMember, ClanApplication, ClanInvite
+from db import Player, Clan, ClanMember, ClanApplication, ClanInvite, database
 from i18n import t
 from core.cache import TTLCache
 from core.telegram_utils import safe_edit
@@ -170,6 +170,12 @@ async def _create_clan(player, name: str) -> str:
         return t(lang, "clan_min_level", level=CLAN_MIN_LEVEL)
 
     now = int(time.time())
+    res = await database.fetch_val(
+        "UPDATE users SET gold = gold - :cost WHERE uid = :uid AND gold >= :cost RETURNING 1",
+        {"cost": CLAN_CREATE_COST, "uid": player.uid},
+    )
+    if not res:
+        return t(lang, "clan_no_gold", cost=CLAN_CREATE_COST)
     clan = await Clan.objects.create(
         name=name, leader_uid=player.uid, description="",
         created_at=now, updated_at=now,
@@ -177,7 +183,6 @@ async def _create_clan(player, name: str) -> str:
     await ClanMember.objects.create(clan_id=clan.id, player_uid=player.uid,
                                     role="leader", joined_at=now)
     player.gold -= CLAN_CREATE_COST
-    await player.update(_columns=["gold"])
     return t(lang, "clan_created", name=name, cost=CLAN_CREATE_COST)
 
 
@@ -446,7 +451,13 @@ async def _donate(update, player, lang: str, amount_str: str) -> None:
         return
 
     player.gold -= amount
-    await player.update(_columns=["gold"])
+    res = await database.fetch_val(
+        "UPDATE users SET gold = gold - :amount WHERE uid = :uid AND gold >= :amount RETURNING 1",
+        {"amount": amount, "uid": player.uid},
+    )
+    if not res:
+        await safe_edit(update.callback_query, t(lang, "clan_no_gold", cost=amount))
+        return
     clan.bank_gold += amount
     gained = amount // 10
     clan.xp += gained

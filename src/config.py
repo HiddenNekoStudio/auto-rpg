@@ -27,7 +27,18 @@ def load_env_file():
                     line = line.strip()
                     if line and not line.startswith("#") and "=" in line:
                         key, val = line.split("=", 1)
-                        os.environ[key.strip()] = val.strip()
+                        val = val.strip()
+                        # Снять кавычки, если значение закавычено.
+                        if len(val) >= 2 and val[0] == val[-1] and val[0] in "\"'":
+                            val = val[1:-1]
+                        else:
+                            # Обрезать inline-комментарий: `KEY=3600  # comment`.
+                            # Только при пробеле перед '#', чтобы не ломать
+                            # значения с '#' внутри (пароли, токены).
+                            for sep in (" #", "\t#"):
+                                if sep in val:
+                                    val = val.split(sep, 1)[0].rstrip()
+                        os.environ.setdefault(key.strip(), val)
             logger.info(f".env loaded from: {path}")
             return True
     
@@ -360,7 +371,7 @@ VIP_SHOP_ITEMS = {
 # PRESTIGE НАСТРОЙКИ
 # =============================================
 PRESTIGE_BONUS_PER_LEVEL = 2  # % бонуса за каждый уровень prestige
-PRESTIGE_MAX_BONUS = 1000     # максимум % бонуса
+PRESTIGE_MAX_BONUS = 150      # максимум % бонуса (×2.5 от базы — защита кривой TIME_EXP)
 
 # =============================================
 #   НАСТРОЙКИ БОССОВ (гибкая система)

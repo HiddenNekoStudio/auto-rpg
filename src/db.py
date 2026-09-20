@@ -31,24 +31,34 @@ def _now_ts() -> int:
     return int(datetime.now().timestamp())
 
 # ponytail: sqlite не использует хост/порт/креды — иначе URL sqlite://user:pass@host/db
-if cfg.DBTYPE.startswith("sqlite"):
+_IS_SQLITE = cfg.DBTYPE.startswith("sqlite")
+if _IS_SQLITE:
     DBSTRING = f"sqlite+aiosqlite:///{cfg.DB_PATH}"
 else:
     DBSTRING = f"{cfg.DBTYPE}://{quote_plus(cfg.DBUSER)}:{quote_plus(cfg.DBPASS)}@{cfg.DBHOST}:{cfg.DBPORT}/{cfg.DBNAME}"
-engine_args = {
-    "pool_size": POOL_SIZE,
-    "max_overflow": MAX_OVERFLOW,
-    "pool_timeout": POOL_TIMEOUT,
-    "pool_recycle": POOL_RECYCLE,
-    "pool_pre_ping": True,
-}
+
+# SQLite — файловая БД с единственным писателем: пул-опции неприменимы.
+# databases пробрасывает неизвестные kwargs прямо в sqlite3.connect() ->
+# TypeError: Connection() got an unexpected keyword argument 'min_size'.
+if _IS_SQLITE:
+    engine_args = {}
+    _database_args = {}
+else:
+    engine_args = {
+        "pool_size": POOL_SIZE,
+        "max_overflow": MAX_OVERFLOW,
+        "pool_timeout": POOL_TIMEOUT,
+        "pool_recycle": POOL_RECYCLE,
+        "pool_pre_ping": True,
+    }
+    _database_args = {
+        "min_size": POOL_SIZE // 2,
+        "max_size": POOL_SIZE,
+    }
 
 metadata = sqlalchemy.MetaData()
-database = databases.Database(
-    DBSTRING,
-    min_size=POOL_SIZE // 2,
-    max_size=POOL_SIZE,
-)
+database = databases.Database(DBSTRING, **_database_args)
+# engine — синхронный, для alembic/metadata.create_all и тестов схемы.
 engine = sqlalchemy.create_engine(
     DBSTRING.replace("+aiosqlite", "").replace("+aiomysql", "").replace("+asyncpg", ""),
     **engine_args
@@ -338,7 +348,7 @@ class Player(ormar.Model):
             UPDATE users SET 
                 currentxp = currentxp + :xp,
                 totalxp = totalxp + :xp
-            WHERE online = 1 {exclude_clause}
+            WHERE online = TRUE {exclude_clause}
         """)
         await database.execute(stmt, params)
 
@@ -508,8 +518,13 @@ async def create_indexes():
         "CREATE INDEX IF NOT EXISTS idx_users_state ON users(state)",
         "CREATE INDEX IF NOT EXISTS idx_users_onquest_online ON users(onquest, online)",
         "CREATE INDEX IF NOT EXISTS idx_users_level_totalxp ON users(level DESC, totalxp DESC)",
+        # hunting_loop каждые INTERVAL сек: WHERE online AND hunting_expires_at > 0
+        "CREATE INDEX IF NOT EXISTS idx_users_hunting ON users(hunting_expires_at) WHERE hunting_expires_at > 0",
         "CREATE INDEX IF NOT EXISTS idx_bosses_defeated_respawn ON bosses(defeated, respawn_available)",
         "CREATE INDEX IF NOT EXISTS idx_bosses_xy ON bosses(x, y)",
+        # dungeon_loop / arena_loop: WHERE status = 'active'
+        "CREATE INDEX IF NOT EXISTS idx_dungeon_runs_status ON dungeon_runs(status)",
+        "CREATE INDEX IF NOT EXISTS idx_arena_runs_status ON arena_runs(status)",
     ]
     for sql in indexes:
         try:

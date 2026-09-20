@@ -24,8 +24,8 @@ class PluginRegistry:
         Декоратор для регистрации плагина.
         
         Usage:
-            @PluginRegistry.register("clans", description="Clan system")
-            class ClansPlugin(GamePlugin):
+            @PluginRegistry.register("example", description="Example system")
+            class ExamplePlugin(GamePlugin):
                 ...
         """
         def decorator(plugin_cls: type[GamePlugin]) -> type[GamePlugin]:
@@ -126,18 +126,23 @@ class PluginRegistry:
     
     @classmethod
     async def trigger_player_action(
-        cls, 
-        player_uid: int, 
-        action: str, 
+        cls,
+        player_uid: int,
+        action: str,
         data: dict[str, Any]
     ) -> None:
-        """Триггерить событие для всех загруженных плагинов."""
+        """Триггерить событие для всех загруженных плагинов.
+
+        data мутируется плагинами (modified_damage / bonus_gold / bonus_xp) —
+        вызывающая сторона читает результат из того же dict.
+        """
         for name, plugin in cls._loaded_plugins.items():
             try:
                 await plugin.on_player_action(player_uid, action, data)
             except Exception as e:
                 logger.error(f"Plugin {name} action error: {e}")
-    
+
+
     @classmethod
     async def trigger_game_tick(cls, tick_number: int, bot=None) -> None:
         """Триггерить игровой тик для всех плагинов."""

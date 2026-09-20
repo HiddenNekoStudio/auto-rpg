@@ -16,7 +16,7 @@ import random
 import time
 
 import config as cfg
-from db import Player
+from db import Player, database
 import game.combat as combat
 
 logger = logging.getLogger(__name__)
@@ -340,10 +340,14 @@ async def apply_death_penalty(player, mode_cfg: dict, data: dict) -> dict:
     pct = mode_cfg.get("death_gold_penalty", 0.0)
     if pct > 0 and player.gold > 0:
         loss = int(player.gold * pct)
-        player.gold -= loss
+        res = await database.fetch_val(
+            "UPDATE users SET gold = gold - :loss WHERE uid = :uid AND gold >= :loss RETURNING 1",
+            {"loss": loss, "uid": player.uid},
+        )
+        if not res:
+            loss = 0
         result["gold_lost"] = loss
         data["gold_lost"] = loss
-        result["update_cols"].append("gold")
 
     chance = mode_cfg.get("death_item_chance", 0.0)
     if chance > 0 and random.random() < chance:
@@ -475,13 +479,14 @@ async def process_hunting_tick(bot, player) -> None:
             await on_monster_defeated(player, name_key)
         except Exception as e:
             logger.debug(f"Quest progress error (hunt): {e}")
+    else:
+        # Поражение: слабый режим — просто отступление, остальные — смерть со штрафом.
+        if mode == "weak":
+            data["escapes"] = data.get("escapes", 0) + 1
         else:
-            if mode == "weak":
-                data["escapes"] = data.get("escapes", 0) + 1
-            else:
-                data["died"] = True
-                combat.reset_fury(player.uid, cfg.FURY_RESET_LOSS)
-                player.monster_deaths = (player.monster_deaths or 0) + 1
+            data["died"] = True
+            combat.reset_fury(player.uid, cfg.FURY_RESET_LOSS)
+            player.monster_deaths = (player.monster_deaths or 0) + 1
             update_cols.append("monster_deaths")
             penalty = await apply_death_penalty(player, mode_cfg, data)
             update_cols.extend(penalty["update_cols"])
@@ -586,12 +591,10 @@ async def finish_hunt(bot, player) -> dict:
 
     if total_xp > 0:
         player.nextxp = max(player.currentxp + 1, player.nextxp - total_xp)
-        update_cols.append("nextxp")
         summary["xp_granted"] = total_xp
 
     if total_gold > 0:
         player.gold += total_gold
-        update_cols.append("gold")
         summary["gold_granted"] = total_gold
 
     summary["gold_lost"] = data.get("gold_lost", 0)
@@ -610,6 +613,12 @@ async def finish_hunt(bot, player) -> dict:
             update_cols.append(c)
 
     await player.update(_columns=update_cols)
+    if total_xp > 0 or total_gold > 0:
+        await database.execute(
+            "UPDATE users SET nextxp = CASE WHEN nextxp - :xp > currentxp + 1 THEN nextxp - :xp ELSE currentxp + 1 END, "
+            "gold = gold + :gold WHERE uid = :uid",
+            {"xp": total_xp, "gold": total_gold, "uid": player.uid},
+        )
     logger.info(f"Hunt finished uid={player.uid} mode={summary['mode']} "
                 f"kills={summary['kills']} survived={survived}")
     return summary
@@ -640,11 +649,9 @@ async def cancel_hunt(player) -> dict:
         total_gold = data.get("total_gold", 0)
         if total_xp > 0:
             player.nextxp = max(player.currentxp + 1, player.nextxp - total_xp)
-            update_cols.append("nextxp")
             summary["xp_granted"] = total_xp
         if total_gold > 0:
             player.gold += total_gold
-            update_cols.append("gold")
             summary["gold_granted"] = total_gold
         for item in summary["loot_items"]:
             try:
@@ -658,4 +665,10 @@ async def cancel_hunt(player) -> dict:
                 update_cols.append(c)
 
     await player.update(_columns=update_cols)
+    if data and (total_xp > 0 or total_gold > 0):
+        await database.execute(
+            "UPDATE users SET nextxp = CASE WHEN nextxp - :xp > currentxp + 1 THEN nextxp - :xp ELSE currentxp + 1 END, "
+            "gold = gold + :gold WHERE uid = :uid",
+            {"xp": total_xp, "gold": total_gold, "uid": player.uid},
+        )
     return summary

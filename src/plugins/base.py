@@ -53,13 +53,14 @@ class GamePlugin(ABC):
         pass
     
     @abstractmethod
-    async def on_game_tick(self, tick_number: int) -> Optional[str]:
+    async def on_game_tick(self, tick_number: int, bot=None) -> Optional[str]:
         """
         Вызывается на каждом игровом тике.
-        
+
         Args:
             tick_number: Номер тика
-            
+            bot: Экземпляр Telegram Bot (может быть None вне рантайма)
+
         Returns:
             Опциональное событие
         """

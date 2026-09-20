@@ -172,7 +172,6 @@ class PassiveSkillsPlugin(GamePlugin):
                 if success:
                     effect = PassiveRegistry.get(passive_id)
                     price = await _get_price(passive_id, player.uid)
-                    await player.update(_columns=["gold"])
                     
                     keyboard = InlineKeyboardMarkup([
                         [InlineKeyboardButton("⚔️ Экипировать" if lang != "en" else "⚔️ Equip", callback_data=f"passive_equip_{passive_id}")],

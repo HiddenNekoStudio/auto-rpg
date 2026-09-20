@@ -6,7 +6,7 @@ import random
 from typing import Optional
 
 import config as cfg
-from db import Player
+from db import Player, database
 from bot import ctime
 
 WEAPON_SLOTS = cfg.WEAPON_SLOTS
@@ -158,6 +158,11 @@ async def challenge_opp(player: Player, opp: Optional[Player] = None) -> tuple[s
 
     real_gold = max(1, int(nextval * 0.5))
     real_xp = max(1, abs(nextval))
+
+    xp_reduction = 0
+    xp_reduction_o = 0
+    kill_gold_p = 0
+    kill_gold_o = 0
 
     if player_val >= opp_val:
         steal_str_p = ""
@@ -320,8 +325,31 @@ async def challenge_opp(player: Player, opp: Optional[Player] = None) -> tuple[s
                 + o_gold_line + backstab_str_o
             )
 
-    await player.update(_columns=["nextxp", "totalxplost", "wins", "loss", "gold"])
-    await opp.update(_columns=["nextxp", "totalxplost", "wins", "loss", "gold"])
+    # Атомарные инкременты вместо снапшота — не теряем изменения от гонок
+    async def _duel_stats(u, *, win: bool, xp_reduction: int, xp_penalty: int, gold_delta: int):
+        if win:
+            await database.execute(
+                "UPDATE users SET nextxp = CASE WHEN nextxp - :red > currentxp + 1 THEN nextxp - :red ELSE currentxp + 1 END, "
+                "wins = wins + 1, gold = gold + :gold WHERE uid = :uid",
+                {"red": xp_reduction, "gold": gold_delta, "uid": u},
+            )
+        else:
+            await database.execute(
+                "UPDATE users SET nextxp = nextxp + :pen, totalxplost = totalxplost + :pen, "
+                "loss = loss + 1 WHERE uid = :uid",
+                {"pen": xp_penalty, "uid": u},
+            )
+
+    await _duel_stats(
+        player.uid, win=(player_val >= opp_val),
+        xp_reduction=xp_reduction, xp_penalty=nextval,
+        gold_delta=real_gold + kill_gold_p,
+    )
+    await _duel_stats(
+        opp.uid, win=(opp_val > player_val),
+        xp_reduction=xp_reduction_o, xp_penalty=nextval,
+        gold_delta=real_gold + kill_gold_o,
+    )
 
     from game.quests import on_duel_win
     await on_duel_win(win_duel_progress_uid)

@@ -44,9 +44,26 @@ def _current_value(player, atype: str) -> int:
 
 
 async def _inc_progress(player, atype: str, amount: int = 1):
-    progress = _progress(player)
-    progress[atype] = progress.get(atype, 0) + amount
-    player.achievement_progress = json.dumps(progress)
+    from db import database
+    for _ in range(3):
+        progress = _progress(player)
+        progress[atype] = progress.get(atype, 0) + amount
+        new_progress = json.dumps(progress)
+        old = player.achievement_progress
+        player.achievement_progress = new_progress
+        res = await database.fetch_val(
+            "UPDATE users SET achievement_progress = :p "
+            "WHERE uid = :uid AND achievement_progress = :old RETURNING 1",
+            {"p": new_progress, "uid": player.uid, "old": old},
+        )
+        if res:
+            return
+        # CAS не прошёл: конкурентная запись или строки уже нет.
+        # Перечитываем и пробуем снова; при ошибке чтения выходим на fallback.
+        try:
+            await player.load()
+        except Exception:
+            break
     await player.update(_columns=["achievement_progress"])
 
 
@@ -75,7 +92,11 @@ async def check_achievements(player, atype: str, current: int | None = None):
             reward = conf.get("reward_tokens", 0)
             if reward:
                 player.tokens = (player.tokens or 0) + reward
-                await player.update(_columns=["tokens"])
+                from db import database
+                await database.execute(
+                    "UPDATE users SET tokens = tokens + :tok WHERE uid = :uid",
+                    {"tok": reward, "uid": player.uid},
+                )
             lang = getattr(player, "lang", None) or "ru"
             name = conf.get("name_ru", aid) if lang != "en" else conf.get("name_en", aid)
             await emit_global_event(
