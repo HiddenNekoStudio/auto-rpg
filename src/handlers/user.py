@@ -213,6 +213,7 @@ async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         idle_xp_gained = player.idle_xp
 
         level_changed = False
+        level_before = player.level
         if idle_xp_gained > 0:
             player.currentxp += idle_xp_gained
             player.totalxp += idle_xp_gained
@@ -256,17 +257,13 @@ async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
             },
         )
 
-        if idle_xp_gained > 0:
-            text = t(lang, "idle_return",
-                     name=player.name,
-                     duration=ctime(idle_duration, lang),
-                     xp=format_short(idle_xp_gained),
-                     level=player.level,
-                     next=ctime(player.nextxp - player.currentxp, lang))
-        else:
-            text = t(lang, "idle_return_no_xp",
-                     name=player.name,
-                     duration=ctime(idle_duration, lang))
+        from game.absence import absence_text
+        text = await absence_text(
+            player, lang,
+            away_seconds=idle_duration,
+            xp=idle_xp_gained,
+            levels_gained=player.level - level_before,
+        )
     else:
         player.online = True
         player.lastlogin = now
@@ -314,8 +311,12 @@ async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 )
                 await act.save()
 
-    await update.message.reply_text(text, parse_mode="HTML",
-                                    reply_markup=main_menu_keyboard(lang))
+    if player.onboarding_done:
+        from game.home import home_keyboard_for
+        keyboard = await home_keyboard_for(player, lang)
+    else:
+        keyboard = main_menu_keyboard(lang)
+    await update.message.reply_text(text, parse_mode="HTML", reply_markup=keyboard)
 
 
 async def callback_set_lang(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -793,7 +794,11 @@ def _profile_keyboard(lang: str) -> InlineKeyboardMarkup:
             InlineKeyboardButton(t(lang, "daily_menu_btn"), callback_data="daily_menu"),
             InlineKeyboardButton(t(lang, "clan_btn"), callback_data="clan_menu"),
         ],
-        [InlineKeyboardButton(t(lang, "btn_character"), callback_data="char_hub")],
+        [
+            InlineKeyboardButton(t(lang, "btn_character"), callback_data="char_hub"),
+            InlineKeyboardButton("💪 Характеристики" if lang != "en" else "💪 Stats", callback_data="codex_stats"),
+        ],
+        [InlineKeyboardButton("📔 Дневник" if lang != "en" else "📔 Journal", callback_data="codex_menu")],
         [InlineKeyboardButton(t(lang, "menu"), callback_data="menu_back")],
     ]
     return InlineKeyboardMarkup(rows)
@@ -1012,8 +1017,13 @@ async def callback_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     if action == "menu_back":
         name = player.name if player else user.full_name
-        await safe_edit(query, t(lang, "main_menu", name=name),
-                        parse_mode="HTML", reply_markup=main_menu_keyboard(lang))
+        if player and player.onboarding_done:
+            from game.home import home_screen
+            home_text, home_keyboard = await home_screen(player, lang)
+            await safe_edit(query, home_text, parse_mode="HTML", reply_markup=home_keyboard)
+        else:
+            await safe_edit(query, t(lang, "main_menu", name=name),
+                            parse_mode="HTML", reply_markup=main_menu_keyboard(lang))
 
     elif action == "menu_profile":
         if not player:

@@ -64,6 +64,9 @@ def make_hunter(mode="epic", uid=9001):
     p.get_max_mp = MagicMock(return_value=200)
     p.get_dps = MagicMock(return_value=300)
     p.sync_max_hp_mp = MagicMock()
+    # hunting_interval читает буст скорости и сумму экипировки
+    p.speed_boost_until = 0
+    p._get_equip_sum = MagicMock(return_value=0)
     return p
 
 

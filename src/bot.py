@@ -159,6 +159,8 @@ async def post_init(app: Application) -> None:
         BotCommand("daily",   "Ежедневная награда"),
         BotCommand("clan",    "Кланы"),
         BotCommand("pets",    "Питомцы"),
+        BotCommand("hunt",    "Охота"),
+        BotCommand("journal", "Дневник героя"),
     ], language_code="ru")
     await app.bot.set_my_commands([
         BotCommand("start",   "Main menu"),
@@ -170,6 +172,8 @@ async def post_init(app: Application) -> None:
         BotCommand("daily",   "Daily reward"),
         BotCommand("clan",    "Clans"),
         BotCommand("pets",    "Pets"),
+        BotCommand("hunt",    "Hunting"),
+        BotCommand("journal", "Hero's journal"),
     ], language_code="en")
 
     # Запускаем HTTP сервер для healthcheck в том же event loop
@@ -324,6 +328,8 @@ def main():
     raid.register(app)
     import handlers.battle as battle
     battle.register(app)
+    import handlers.codex as codex
+    codex.register(app)
     from plugins.shop import register_shop_handlers
     register_shop_handlers(app)
     from plugins.vip_shop import register_vip_handlers

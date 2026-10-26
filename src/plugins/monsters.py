@@ -82,6 +82,27 @@ RANK_PENALTY = {
 }
 
 
+_RANK_ORDER = ["Common", "Uncommon", "Rare", "Epic", "Legendary"]
+
+
+def _create_quest_target(monster_id: str, player_level: int, allowed_types,
+                         max_rank: str, min_rank: Optional[str]):
+    """Монстр-цель квеста, если он подходит биому и рангу; иначе None."""
+    from game.factories import MonsterFactory
+
+    data = next((m for m in MonsterFactory.get_config()._data if m.get("id") == monster_id), None)
+    if data is None:
+        return None
+    if allowed_types and data.get("type") not in allowed_types:
+        return None
+    rank = _RANK_ORDER.index(data.get("rank", "Common"))
+    if rank > _RANK_ORDER.index(max_rank):
+        return None
+    if min_rank and rank < _RANK_ORDER.index(min_rank):
+        return None
+    return MonsterFactory.create(monster_id, player_level)
+
+
 @PluginRegistry.register(
     "monster_encounters",
     description="Встречи с монстрами — сбалансированная боевая система",
@@ -199,14 +220,34 @@ class MonsterEncountersPlugin(GamePlugin):
                 count = max(2, count * 2)
 
             monsters = []
+            # PQ3: quest target bias — bias spawn toward active kill_monster quest target
+            quest_target_type = None
+            try:
+                from db import PlayerQuest
+                active_qs = await PlayerQuest.objects.filter(
+                    player_uid=player.uid, category="kill_monster", status="active",
+                ).all()
+                for q in active_qs:
+                    if q.target_id and q.target_id not in ("", "*"):
+                        quest_target_type = q.target_id
+                        break
+            except Exception:
+                quest_target_type = None
+
             for _ in range(count):
                 from game.factories import MonsterFactory
-                monster = MonsterFactory.create_random(
-                    player.level,
-                    allowed_types=allowed_types,
-                    max_rank=rank_cap,
-                    min_rank=min_rank,
-                )
+                monster = None
+                if quest_target_type and random.random() < cfg.QUEST_TARGET_SPAWN_BIAS:
+                    monster = _create_quest_target(
+                        quest_target_type, player.level, allowed_types, rank_cap, min_rank
+                    )
+                if monster is None:
+                    monster = MonsterFactory.create_random(
+                        player.level,
+                        allowed_types=allowed_types,
+                        max_rank=rank_cap,
+                        min_rank=min_rank,
+                    )
 
                 if is_party:
                     monster._is_party = True
@@ -320,7 +361,8 @@ class MonsterEncountersPlugin(GamePlugin):
             current_item = getattr(player, slot, None)
             # ponytail: пустой слот — тоже экипировка; isinstance-гейт не пускал
             if not isinstance(current_item, dict) or is_item_better(item, current_item):
-                setattr(player, slot, item)
+                from game.gems import replace_item
+                await replace_item(player, slot, item)
                 player.sync_max_hp_mp()
                 if slot not in update_cols:
                     update_cols.append(slot)
@@ -336,9 +378,13 @@ class MonsterEncountersPlugin(GamePlugin):
                     return f"\n🎒 *Loot!* {rank_emoji} {item_string(item, lang)}"
                 return f"\n🎒 *Дроп!* {rank_emoji} {item_string(item, lang)}"
             else:
+                from game.autosell import sell_item
+                sold = await sell_item(player, item)
                 if lang == "en":
-                    return f"\n🎒 *Loot!* {rank_emoji} {item_string(item, lang)} — your {slot} is better"
-                return f"\n🎒 *Дроп!* {rank_emoji} {item_string(item, lang)} — твой {slot} лучше"
+                    return (f"\n🎒 *Loot!* {rank_emoji} {item_string(item, lang)} — "
+                            f"your {slot} is better, sold for 💰{sold}")
+                return (f"\n🎒 *Дроп!* {rank_emoji} {item_string(item, lang)} — "
+                        f"твой {slot} лучше, продан за 💰{sold}")
         except Exception as e:
             logger.error(f"Loot error: {e}")
             return ""
@@ -529,8 +575,17 @@ class MonsterEncountersPlugin(GamePlugin):
         variant = getattr(monster, '_variant', 'normal')
         vmult = cfg.VARIANT_MULT.get(variant, {})
         vprefix = vmult.get(f"prefix_{lang}", "") if vmult else ""
-        monster_name = f"{vprefix}{monster.get_display_name(lang)}"
         monster_level = max(1, monster.level)
+
+        # PQ3: уровневый префикс по разнице уровней + именные элитки 1/25
+        from game.monster_prefixes import level_prefix, generate_named_monster, is_named_elite
+        base_display = monster.get_display_name(lang)
+        is_named = is_named_elite()
+        if is_named:
+            monster_name = f"{vprefix}✨ {generate_named_monster(lang)} ({base_display})"
+        else:
+            lvl_prefix = level_prefix(monster_level - player.level, lang)
+            monster_name = f"{vprefix}{lvl_prefix}{base_display}"
         monster_rank = monster.rank if hasattr(monster, 'rank') else "Common"
         is_party = getattr(monster, '_is_party', False)
 
@@ -1192,6 +1247,12 @@ class MonsterEncountersPlugin(GamePlugin):
 
         await player.update(_columns=update_cols)
 
+        try:
+            from game.nemesis import record_encounter
+            await record_encounter(player.uid, getattr(monster, "_id", ""), player_won)
+        except Exception as e:
+            logger.error(f"Nemesis error: {e}")
+
         if player_won:
             try:
                 from game.quests import on_win_streak
@@ -1201,9 +1262,15 @@ class MonsterEncountersPlugin(GamePlugin):
 
             try:
                 from game.quests import on_monster_defeated
-                await on_monster_defeated(player, monster_name)
+                await on_monster_defeated(player, getattr(monster, "_id", ""))
             except Exception as e:
                 logger.error(f"Quest progress error: {e}")
+
+            try:
+                from game.bestiary import record_kill
+                await record_kill(player, getattr(monster, "_id", ""))
+            except Exception as e:
+                logger.error(f"Bestiary error: {e}")
 
             try:
                 from core.loot import maybe_drop_gem

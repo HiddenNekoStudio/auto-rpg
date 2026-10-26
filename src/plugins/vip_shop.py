@@ -90,9 +90,10 @@ async def buy_prestige(player: Player, lang: str) -> tuple[str, InlineKeyboardMa
     player.nextxp = 600
     player.gold = 0
     
+    from game.gems import replace_item
     for slot in cfg.WEAPON_SLOTS:
-        setattr(player, slot, generate_item_data(slot, 1))
-    
+        await replace_item(player, slot, generate_item_data(slot, 1))
+
     player.prestige_count += 1
     player.sync_max_hp_mp()
     await player.update(_columns=[

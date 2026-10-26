@@ -54,7 +54,7 @@ load_env_file()
 # Название игры
 GAME_NAME = "AutoRPG"
 # Версия
-VERSION = "2.1.0-beta1"
+VERSION = "3.0.0-beta1"
 # Описание игры (показывается по /info)
 GAME_INFO = f"🎮 AutoRPG (v{VERSION}) — Idle RPG Telegram"
 # Токен Telegram бота (получить у @BotFather)
@@ -475,6 +475,17 @@ STARS_SHOP_MAX_PER_PURCHASE = 10
 # =============================================
 #   СИСТЕМА ОХОТЫ
 # =============================================
+# Прогресс за убийство вида, который назван в квесте (обычное убийство = 1)
+QUEST_TARGET_PROGRESS_MULT = 2
+
+# Шанс, что спавн тянется к виду из активного квеста на убийство
+QUEST_TARGET_SPAWN_BIAS = 0.5
+
+# Скорость охоты от качества экипировки (PQ3): интервал × K/(K+quality),
+# но не быстрее FLOOR от базового интервала. Не стакается с VIP speed_boost.
+HUNTING_LOADOUT_SPEED_K = 4000
+HUNTING_LOADOUT_SPEED_FLOOR = 0.65
+
 # Интервал боя (секунды) по режимам
 HUNTING_INTERVAL = {
     "weak": 120,      # каждые 2 мин

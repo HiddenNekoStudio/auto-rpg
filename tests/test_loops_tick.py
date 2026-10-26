@@ -77,7 +77,8 @@ def tick_patches():
         patch("game.skills.passives.registry.PassiveSkillRegistry.trigger_on_tick",
               AsyncMock(side_effect=no_passive)),
         patch.object(loops, "send_to_players", AsyncMock(side_effect=noop)),
-        patch("loot.get_item", AsyncMock(side_effect=lambda player: (None, None, None))),
+        patch("loot.get_item", AsyncMock(side_effect=lambda player: ({"rank": "Common"}, "weapon", False))),
+        patch("game.autosell.sell_item", AsyncMock(return_value=0)),
         patch("bot.item_string", lambda item, lang: ""),
     ]
     for p in patches:

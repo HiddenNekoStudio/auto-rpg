@@ -41,7 +41,8 @@ async def get_item(player: Player) -> tuple[dict, str, bool]:
     replaced = False
     current = getattr(player, slot_name)
     if is_item_better(item, current):
-        setattr(player, slot_name, item)
+        from game.gems import replace_item
+        await replace_item(player, slot_name, item)
         player.sync_max_hp_mp()
         await player.update(_columns=[slot_name, "max_hp", "max_mp"])
         replaced = True

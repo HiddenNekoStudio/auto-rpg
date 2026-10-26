@@ -10,6 +10,7 @@ from .maps import register_handlers as register_maps
 from .jobs import register as register_jobs
 from .listeners import register as register_listeners
 from .alignment import register as register_alignment
+from .codex import register as register_codex
 
 
 def register_all(app):
@@ -21,3 +22,4 @@ def register_all(app):
     register_jobs(app)
     register_listeners(app)
     register_alignment(app)
+    register_codex(app)

@@ -119,17 +119,24 @@ async def levelup(bot, player: Player) -> None:
 
     item, slot, replaced = await get_item(player)
 
+    sold = 0
+    if not replaced:
+        # Награда за уровень, не попавшая в слот, продаётся (сундуки за золото
+        # не затрагиваем: get_item общий, продажа там дала бы петлю золота).
+        from game.autosell import sell_item
+        sold = await sell_item(player, item)
+
     if lang == "en":
         footer = (
             f"🎒 {slot} *stronger* — equipped!"
             if replaced else
-            f"🎒 {slot} weaker — discarded."
+            f"🎒 {slot} weaker — sold for 💰{sold}."
         )
     else:
         footer = (
             f"🎒 {slot} *сильнее* — экипирован!"
             if replaced else
-            f"🎒 {slot} слабее — выброшен."
+            f"🎒 {slot} слабее — продан за 💰{sold}."
         )
 
     if lang == "en":
@@ -150,6 +157,35 @@ async def levelup(bot, player: Player) -> None:
             + item_string(item, lang) + "\n"
             + "_" + footer + "_"
         )
+
+    try:
+        from game.acts import check_act_progress, act_name
+        for act in await check_act_progress(player):
+            reward = f" (+{act.tokens} 🪙)" if act.tokens else ""
+            label = "New act" if lang == "en" else "Новый акт"
+            text += f"\n\n📜 *{label} {act.number}: {act_name(act, lang)}*{reward}"
+    except Exception:
+        logging.exception("acts check error uid=%s", player.uid)
+
+    try:
+        from game.stats import grant_level_point, STAT_ICONS
+        stat = await grant_level_point(player)
+        text += f"\n\n{STAT_ICONS[stat]} +1 {stat.upper()}"
+        # Характеристики меняют максимумы HP/MP/DPS — сбрасываем кэши
+        player.sync_max_hp_mp()
+        from core.dps import invalidate_dps_cache
+        invalidate_dps_cache(player.uid)
+    except Exception:
+        logging.exception("prime stats error uid=%s", player.uid)
+
+    try:
+        from game.spellbook import learn_on_levelup, spell_name
+        spell = await learn_on_levelup(player)
+        if spell:
+            label = "New spell" if lang == "en" else "Новое заклинание"
+            text += f"\n\n📕 *{label}: {spell_name(spell, lang)}*"
+    except Exception:
+        logging.exception("spellbook error uid=%s", player.uid)
 
     await send_to_players(bot, text, player_uids=[player.uid])
 

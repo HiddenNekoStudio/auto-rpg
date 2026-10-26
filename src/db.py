@@ -235,6 +235,13 @@ class Player(ormar.Model):
     tokens: int = ormar.Integer(default=0)  # Токены за онлайн (12ч), для премиума
     gold: int = ormar.Integer(default=0)
     achievement_progress: str = ormar.Text(default="{}")  # счётчики достижений
+    # Основные характеристики (game/stats.py): STR->DPS, CON->HP, INT->MP
+    stat_str: int = ormar.Integer(default=10)
+    stat_con: int = ormar.Integer(default=10)
+    stat_dex: int = ormar.Integer(default=10)
+    stat_int: int = ormar.Integer(default=10)
+    stat_wis: int = ormar.Integer(default=10)
+    stat_cha: int = ormar.Integer(default=10)
     title_id: str = ormar.String(max_length=50, default="")  # экипированный титул
 
     # Ежедневные награды (ретеншн)
@@ -423,6 +430,8 @@ class Player(ormar.Model):
         total = int(total * (1 + self._get_set_sum("dps_pct") / 100))
         from game.gems import get_socket_bonuses_sync
         total = int(total * (1 + get_socket_bonuses_sync(self)["dps_pct"] / 100))
+        from game.stats import dps_mult
+        total = int(total * dps_mult(self))
         return total
 
     def get_max_hp(self) -> int:
@@ -434,13 +443,17 @@ class Player(ormar.Model):
         total = int(total * (1 + self._get_set_sum("hp_pct") / 100))
         from game.gems import get_socket_bonuses_sync
         total = int(total * (1 + get_socket_bonuses_sync(self)["hp_pct"] / 100))
+        from game.stats import hp_mult
+        total = int(total * hp_mult(self))
         return total
 
     def get_max_mp(self) -> int:
         """Max MP = база (50 + level*8) + бонус со снаряжения."""
         from game.gems import get_socket_bonuses_sync
-        return (50 + self.level * 8 + self._get_equip_sum("mp_bonus")
+        from game.stats import mp_mult
+        base = (50 + self.level * 8 + self._get_equip_sum("mp_bonus")
                 + self._get_set_stat("mp") + get_socket_bonuses_sync(self)["mp"])
+        return int(base * mp_mult(self))
 
     def sync_max_hp_mp(self):
         """Синхронизировать max_hp / max_mp с текущим расчётом (уровень + экипировка)."""
@@ -707,6 +720,9 @@ class PlayerGem(ormar.Model):
     gem_id: str = ormar.String(max_length=50)
     equipped: bool = ormar.Boolean(default=False)
     acquired_at: int = ormar.Integer(default=0)
+    # Где камень вставлен (пусто/-1, пока лежит в инвентаре)
+    slot: str = ormar.String(max_length=20, default="")
+    socket_idx: int = ormar.Integer(default=-1)
 
 
 class PlayerAchievement(ormar.Model):
@@ -727,6 +743,19 @@ class PlayerTitle(ormar.Model):
     player_uid: int = ormar.BigInteger(index=True)
     title_id: str = ormar.String(max_length=50)
     unlocked_at: int = ormar.Integer(default=0)
+
+
+class PlayerNemesis(ormar.Model):
+    """Досье на вид монстра: встречи, победы и смерти игрока (PQ3 nemesis)."""
+    ormar_config = basemeta.copy(tablename="player_nemesis")
+
+    id: int = ormar.Integer(primary_key=True)
+    player_uid: int = ormar.BigInteger(index=True)
+    monster_id: str = ormar.String(max_length=50)
+    encounters: int = ormar.Integer(default=0)
+    wins: int = ormar.Integer(default=0)
+    deaths: int = ormar.Integer(default=0)
+    last_seen: int = ormar.Integer(default=0)
 
 
 class PlayerActiveSkill(ormar.Model):

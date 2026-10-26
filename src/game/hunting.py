@@ -66,8 +66,8 @@ def get_total_player_dps(player) -> int:
 def estimate_hunt_rewards(player, mode: str, duration: int) -> tuple[int, int]:
     """Ожидаемые награды за охоту (для экрана подтверждения)."""
     mode_cfg = cfg.HUNTING_MODES.get(mode, cfg.HUNTING_MODES["weak"])
-    interval = cfg.HUNTING_INTERVAL.get(mode, 240)
-    fights = max(1, duration // interval)
+    interval = hunting_interval(player, mode)
+    fights = max(1, int(duration // interval))
     dur_bonus = cfg.HUNTING_DURATIONS.get(duration, 1.0)
     base = max(1, player.nextxp - player.currentxp)
     est_xp = int(fights * base * 0.02 * mode_cfg["xp_mult"] * dur_bonus)
@@ -354,7 +354,8 @@ async def apply_death_penalty(player, mode_cfg: dict, data: dict) -> dict:
         try:
             from core.loot import generate_item_data
             slot = random.choice(cfg.WEAPON_SLOTS)
-            setattr(player, slot, generate_item_data(slot, 1))
+            from game.gems import replace_item
+            await replace_item(player, slot, generate_item_data(slot, 1))
             player.sync_max_hp_mp()
             from plugins.monsters import invalidate_dps_cache
             invalidate_dps_cache(player.uid)
@@ -405,6 +406,22 @@ async def _save(player, data: dict, extra_cols: list = None):
     await player.update(_columns=cols)
 
 
+def loadout_speed_factor(quality: int) -> float:
+    """Множитель интервала охоты от качества экипировки: K/(K+q), не ниже FLOOR."""
+    k = cfg.HUNTING_LOADOUT_SPEED_K
+    return max(cfg.HUNTING_LOADOUT_SPEED_FLOOR, k / (k + max(0, quality)))
+
+
+def hunting_interval(player, mode: str) -> float:
+    """Интервал боя охоты с учётом экипировки (без стака с VIP speed_boost)."""
+    base = cfg.HUNTING_INTERVAL.get(mode, 240)
+    from plugins.vip_shop import has_active_speed_boost
+    if has_active_speed_boost(player):
+        return base
+    quality = player._get_equip_sum("dps") + player._get_equip_sum("def_bonus")
+    return base * loadout_speed_factor(quality)
+
+
 async def process_hunting_tick(bot, player) -> None:
     """Один тик охоты для игрока. Вызывается из hunting_loop."""
     now = int(time.time())
@@ -419,7 +436,7 @@ async def process_hunting_tick(bot, player) -> None:
         return
 
     mode = data.get("mode", "weak")
-    interval = cfg.HUNTING_INTERVAL.get(mode, 240)
+    interval = hunting_interval(player, mode)
     last_tick = data.get("last_hunt_tick", 0)
     if now - last_tick < interval:
         return
@@ -542,7 +559,8 @@ async def _equip_loot(player, item: dict, update_cols: list) -> bool:
     from core.loot import is_item_better
     current = getattr(player, slot, None)
     if not isinstance(current, dict) or is_item_better(item, current):
-        setattr(player, slot, item)
+        from game.gems import replace_item
+        await replace_item(player, slot, item)
         player.sync_max_hp_mp()
         update_cols.extend([slot, "max_hp", "max_mp"])
         from plugins.monsters import invalidate_dps_cache

@@ -115,7 +115,22 @@ def _normalize_monster_type(monster_name: str) -> str:
     """Нормализовать имя монстра в тип для квестов"""
     if not monster_name:
         return ""
-    return _MONSTER_TYPE_MAP.get(monster_name, "")
+    mapped = _MONSTER_TYPE_MAP.get(monster_name, "")
+    if mapped:
+        return mapped
+    # Fallback: имена из monsters.json (name_ru/name_en → id),
+    # устойчив к декоративным префиксам («👑», «Мессианский », «✨ Имя (…)»).
+    name = monster_name
+    for deco in ("👑", "⭐", "✨"):
+        name = name.replace(deco, "")
+    if "(" in name and name.endswith(")"):
+        name = name[name.index("(") + 1 : -1]
+    name = name.strip()
+    from game.factories import MonsterFactory
+    for m in MonsterFactory.get_config()._data:
+        if name in (m.get("name_ru"), m.get("name_en")):
+            return m.get("id", "")
+    return ""
 
 
 # ═══════════════════════════════════════════════════════════════
@@ -225,6 +240,11 @@ async def check_quest_progress(
             quest.progress = max(quest.progress, event_data.get("count", 1))
         elif quest.category == "earn_xp":
             quest.progress += max(1, event_data.get("amount", 1))
+        elif (quest.category == "kill_monster"
+                and quest.target_id not in ("", "*")
+                and quest.target_id in (target_id, normalized_target)):
+            # PQ3: убийство целевого вида считается дважды (квест на конкретного монстра)
+            quest.progress += cfg.QUEST_TARGET_PROGRESS_MULT
         else:
             quest.progress += 1
         quest.last_progress_at = int(time.time())
